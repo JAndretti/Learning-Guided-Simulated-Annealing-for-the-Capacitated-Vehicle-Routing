@@ -1,0 +1,57 @@
+!!python/object:setup.HP._HP
+config:
+  BATCH_SIZE: 1024
+  BETA_KL: 0.00390625
+  CRITIC_MODEL: ff
+  DATA: random
+  DEVICE: cuda
+  EMBEDDING_DIM: 32
+  ENTRY: 17
+  ENT_COEF: 0.01
+  EPS_CLIP: 0.25
+  GAMMA: 0.99
+  GP_LAMBDA: 0.01
+  GROUP: UPDATE_and_INIT
+  HEURISTIC:
+  - insertion
+  INIT: random
+  INIT_LIST:
+  - isolate
+  - random
+  - sweep
+  INIT_TEMP: 1
+  INNER_STEPS: 1
+  LOG: true
+  LOSS: min_cost
+  LR_ACTOR: 0.001
+  LR_CRITIC: 0.001
+  MAX_LOAD: 50
+  METHOD: ppo
+  METROPOLIS: true
+  MODEL: seq
+  MULTI_INIT: true
+  NAZARI: true
+  NORMALIZE_REWARD: false
+  NUM_H_LAYERS: 1
+  N_EPOCHS: 10000
+  N_PROBLEMS: 512
+  OUTER_STEPS: 100
+  PPO_EPOCHS: 15
+  PROBLEM_DIM: 100
+  PROJECT: Neural_Simulated_Annealing
+  REWARD: immediate
+  REWARD_LAST: false
+  REWARD_LAST_ADD: 0.001
+  REWARD_VALID: false
+  SCHEDULER: lam
+  SEED: 42
+  STOP_TEMP: 0.1
+  TARGET_KL: 0.03
+  TEST_DIMENSION: 100
+  TEST_INIT: random
+  TEST_NB_PROBLEMS: 1000
+  TEST_OUTER_STEPS: 500
+  TRACE_DECAY: 0.99
+  UPDATE_METHOD: valid
+  VERBOSE: false
+  WEIGHT_DECAY: 0.001

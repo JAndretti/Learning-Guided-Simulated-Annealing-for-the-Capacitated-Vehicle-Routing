@@ -52,13 +52,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--or_tools_time",
-        type=int,
-        default=30,
+        type=float,
+        default=1.0,
         help="Time limit for the OR-Tools solver in seconds.",
     )
     args = parser.parse_args()
     cfg = {
-        "OR_TOOLS_TIME": args.or_tools_time,  # Time limit in seconds
+        "OR_TOOLS_TIME": args.or_tools_time,
     }
     logger.info(f"Or-Tools solver configuration: {cfg['OR_TOOLS_TIME']}")
 

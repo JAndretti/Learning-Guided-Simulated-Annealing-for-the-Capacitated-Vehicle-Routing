@@ -10,7 +10,7 @@ To download the databases, run the `settings.py` file located at the root of the
 
 ## Explanation of `generate_csv_data.py`
 
-The `generate_csv_data.py` script processes CVRP instances and their solutions to generate a CSV file containing the following information:
+The `generate_csv_data.py` script processes the set **Vrp-Set-XML100**, to generate a CSV file containing the following information:
 - **Instance Name**: The name of the CVRP instance.
 - **Optimal Solution Cost**: The cost of the optimal solution for the instance.
 - **OR-Tools Solution Cost**: The cost computed using the OR-Tools solver.
