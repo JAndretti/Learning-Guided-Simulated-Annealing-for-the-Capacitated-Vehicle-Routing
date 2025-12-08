@@ -122,7 +122,7 @@ if __name__ == "__main__":
             instance_nearest_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="Initial Solution with Nearest Neighbor for Instance {} / ".format(
+            title="Solution with Nearest Neighbor for Instance {} / ".format(
                 i + 1
             ),
         )
