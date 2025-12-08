@@ -4,14 +4,23 @@ A reinforcement learning framework that solves the **Capacitated Vehicle Routing
 
 ## 📌 Overview
 
-Traditional heuristics often struggle to balance exploration and exploitation in large combinatorial spaces. **LG-SA** addresses this by using a neural network (Actor) to propose local moves (like swaps or 2-opt) within a Simulated Annealing framework. The network is trained via PPO to maximize the probability of accepting improved solutions or minimizing total route cost.
+Traditional heuristics often struggle to balance exploration and exploitation in large combinatorial spaces. **LG-SA** addresses this by using a neural network (Actor) to propose local moves (like swaps or insetion) within a Simulated Annealing framework. The network is trained via PPO to maximize the probability of accepting improved solutions or minimizing total route cost.
+
+
+### Example
+
+Here is a visual comparison of different initialization strategies versus the optimized solution found by LG-SA (initialized here with the Random method):
+
+| Initial Solution (Random) | Initial Solution (Nearest Neighbor) | Optimized Solution (LG-SA) |
+| :---: | :---: | :---: |
+| ![Initial Solution Random](example/plots/instance_4_init.png) | ![Initial Solution Nearest](example/plots/instance_4_init_nearest.png) | ![Optimized Solution](example/plots/instance_4.png) |
 
 ### Key Features
 
   * **Hybrid Optimization**: Integrates the Metropolis acceptance criterion of Simulated Annealing with a learnable neural proposal distribution.
   * **Deep Reinforcement Learning**: Uses PPO (Proximal Policy Optimization) with Generalized Advantage Estimation (GAE) to train the policy.
   * **Parallel Environment**: Solves hundreds of CVRP instances simultaneously on GPU for efficient training.
-  * **Flexible Heuristics**: Supports multiple move operators including `swap`, `2-opt`, and mixed strategies.
+  * **Flexible Heuristics**: Supports multiple move operators including `swap`, `insertion`, and mixed strategies.
   * **Adaptive Cooling**: Implements advanced temperature scheduling (Linear, Exponential, Cosine) to manage exploration.
   * **Experiment Tracking**: Native integration with [Weights & Biases](https://wandb.ai/site/) for real-time monitoring of losses, rewards, and solution improvements.
 
@@ -36,9 +45,9 @@ LG-SA/
 │   └── utils.py         # Helper functions
 ├── bdd/                 # Benchmark datasets (Uchoa, Nazari, etc.)
 ├── evaluation/          # Scripts to test/evaluate models on datasets
+├── example/             # An example of LGSA with a trained model
 ├── generated_nazari_problem/ # generate data following Nazari paper
-├── generated_uchoa_problem/ # generate data following Uchoa paper
-└──  plots/               # Plots results 
+└── generated_uchoa_problem/ # generate data following Uchoa paper
 ```
 
 ## 🛠️ Installation
@@ -97,16 +106,7 @@ uv run launch_HP_sweep.py
 
 ### Configuration
 
-All hyperparameters are centrally managed in `src/HyperParameters/HP.yaml`. You can modify this file to adjust the experiment:
-
-| Parameter | Default | Description |
-| :--- | :--- | :--- |
-| `PROBLEM_DIM` | `100` | Number of nodes (customers) in the CVRP. |
-| `N_PROBLEMS` | `512` | Batch size (number of parallel environments). |
-| `MODEL` | `seq` | Architecture type (`seq` or `pairs`). |
-| `HEURISTIC` | `insertion` | Local search operator (`insertion`, `swap`, `two_opt`). |
-| `INIT_TEMP` | `1.0` | Initial temperature for Simulated Annealing. |
-| `DEVICE` | `cuda` | Compute device (`cuda`, `mps`, or `cpu`). |
+All hyperparameters are centrally managed in `src/HyperParameters/HP.yaml`. You can modify this file to adjust the experiment.
 
 ## 🧠 Methodology
 

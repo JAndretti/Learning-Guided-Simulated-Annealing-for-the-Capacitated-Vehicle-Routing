@@ -87,6 +87,7 @@ if __name__ == "__main__":
 
     # Generate initial solution for problems
     init_x = problem.generate_init_state(cfg["INIT"], False)
+    init_nearest_neighbor = problem.generate_init_state("nearest_neighbor", False)
 
     # Save initial plots
     if not os.path.exists("example/plots"):
@@ -109,9 +110,23 @@ if __name__ == "__main__":
             instance_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="Initial Solution for CVRP Instance {} / ".format(i + 1),
+            title="Initial Solution for Instance {} / ".format(i + 1),
         )
         plt.savefig(f"example/plots/instance_{i + 1}_init.png")
+        plt.close()
+        data_init_n, sol_init_n = prepare_plot(problem, init_nearest_neighbor)
+        instance_nearest_sol = sol_init_n[i]
+        fig, ax1 = plt.subplots(figsize=(10, 10))
+        plot_vehicle_routes(
+            instance_data,
+            instance_nearest_sol,
+            ax1=ax1,
+            capacity=cfg["MAX_LOAD"],
+            title="Initial Solution with Nearest Neighbor for Instance {} / ".format(
+                i + 1
+            ),
+        )
+        plt.savefig(f"example/plots/instance_{i + 1}_init_nearest.png")
         plt.close()
 
     with torch.no_grad():
@@ -148,7 +163,7 @@ if __name__ == "__main__":
             instance_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="LGSA Solution for CVRP Instance {} / ".format(i + 1),
+            title="LGSA Solution for Instance {} / ".format(i + 1),
         )
         plt.savefig(f"example/plots/instance_{i + 1}.png")
         plt.close()
