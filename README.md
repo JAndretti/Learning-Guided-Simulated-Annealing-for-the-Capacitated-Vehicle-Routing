@@ -59,8 +59,8 @@ Clone the repository and initialize the environment:
 
 ```bash
 # Clone the repository
-git clone https://github.com/JAndretti/Learning_Guided_Simulated_Annealing_for_the_Capacitated_Vehicle_Routing.git
-cd Learning_Guided_Simulated_Annealing_for_the_Capacitated_Vehicle_Routing
+git clone https://github.com/JAndretti/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing.git
+cd Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
 
 # Install dependencies and setup environment
 # This runs settings.py which handles environment creation and optional DB downloads
