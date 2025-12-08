@@ -11,7 +11,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "s
 from sa import sa_train
 from model import CVRPActor
 from problem import CVRP
-
 from utils import plot_vehicle_routes, prepare_plot
 
 
