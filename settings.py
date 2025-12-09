@@ -1,32 +1,33 @@
 import os
-import zipfile
 from tqdm import tqdm
+import py7zr
 import urllib.request
 
-DOWNLOAD_DB = False
+DOWNLOAD_DB = True
 
 for folder in ["wandb", "res", "bdd"]:
     os.makedirs(folder, exist_ok=True)
 
 link_bdd = [
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-A.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-B.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-E.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-F.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-M.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-P.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-CMT.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-tai.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-Golden.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-Li.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-X.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-XXL.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-D.zip",
-    "http://vrp.atd-lab.inf.puc-rio.br/media/com_vrp/instances/Vrp-Set-XML100.zip",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/A.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/B.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/E.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/F.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/M.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/P.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/CMT.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/tai.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/Golden.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/Li.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/X.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/AGS.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/DIMACS.7z",
+    "https://galgos.inf.puc-rio.br/cvrplib/uploads/instances/CVRP/XML.7z",
 ]
 
 
 if DOWNLOAD_DB:
+
     # Download the datasets
     print("Downloading datasets...")
     for url in tqdm(link_bdd, desc="Downloading datasets"):
@@ -35,7 +36,8 @@ if DOWNLOAD_DB:
         # Download the file
         urllib.request.urlretrieve(url, zip_path)
         # Unzip the file
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall("bdd")
-            # Remove the zip file after extraction
-            os.remove(zip_path)
+        with py7zr.SevenZipFile(zip_path, mode="r") as z:
+            z.extractall(path="bdd")
+        # Remove the zip file after extraction
+        os.remove(zip_path)
+    print("Datasets downloaded and extracted.")

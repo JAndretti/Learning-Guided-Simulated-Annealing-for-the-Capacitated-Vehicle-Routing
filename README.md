@@ -13,7 +13,7 @@ Here is a visual comparison of different initialization strategies versus the op
 
 | Initial Solution (Random) | Initial Solution (Nearest Neighbor) | Optimized Solution (LG-SA) |
 | :---: | :---: | :---: |
-| ![Initial Solution Random](example/plots/instance_4_init.png) | ![Initial Solution Nearest](example/plots/instance_4_init_nearest.png) | ![Optimized Solution](example/plots/instance_4.png) |
+| ![Initial Solution Random](example/plots/instance_3_init.png) | ![Initial Solution Nearest](example/plots/instance_3_init_nearest.png) | ![Optimized Solution](example/plots/instance_3.png) |
 
 ### Key Features
 
