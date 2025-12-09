@@ -311,7 +311,7 @@ def calculate_reward(
         # - Invalid solutions get -1.5
         # - Zero improvement gets 0.0
         # - Otherwise use calculated value
-        reward_signal = torch.where(
+        reward_signal = torch.where( 
             ~is_valid.bool().squeeze(-1),
             -1.5,
             torch.where(
@@ -320,6 +320,7 @@ def calculate_reward(
                 value,
             ),
         ).view(-1, 1)
+        
 
     elif config["REWARD"] == "min_cost":
         reward_signal = ((initial_cost + best_cost) / initial_cost).view(-1, 1)

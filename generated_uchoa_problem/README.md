@@ -1,5 +1,8 @@
 # Generated Problem Directory Overview
 
+> **Warning**
+> During the development of this project, CVRPLIB updated some of their databases and links. Consequently, some scripts relying on specific URL structures or file formats might not function as expected without modification.
+
 This document explains the purpose of each file and folder in the `generated_problem` directory.
 
 ## Python Files

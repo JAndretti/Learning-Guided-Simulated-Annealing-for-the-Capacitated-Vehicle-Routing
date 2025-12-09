@@ -78,6 +78,9 @@ uv run settings.py
 
 *Note: Edit `settings.py` or the configuration if you wish to enable/disable automatic database downloads.*
 
+> **Warning**
+> During the development of this project, CVRPLIB updated some of their databases and links. Consequently, some scripts relying on specific URL structures or file formats might not function as expected without modification.
+
 ### 3\. WandB Configuration
 
 To enable experiment tracking:

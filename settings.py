@@ -3,7 +3,7 @@ from tqdm import tqdm
 import py7zr
 import urllib.request
 
-DOWNLOAD_DB = True
+DOWNLOAD_DB = False
 
 for folder in ["wandb", "res", "bdd"]:
     os.makedirs(folder, exist_ok=True)

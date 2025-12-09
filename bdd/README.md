@@ -1,5 +1,8 @@
 # CVRP Databases
 
+> **Warning**
+> During the development of this project, CVRPLIB updated some of their databases and links. Consequently, some scripts relying on specific URL structures or file formats might not function as expected without modification.
+
 This folder contains various databases related to the Capacitated Vehicle Routing Problem (CVRP). These databases include problem instances and their corresponding solutions.
 
 The databases are sourced from [CVRPLIB](http://vrp.galgos.inf.puc-rio.br/index.php/en/), a well-known repository for CVRP instances and solutions.
