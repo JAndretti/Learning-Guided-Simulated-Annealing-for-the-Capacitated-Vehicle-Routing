@@ -31,6 +31,7 @@ dependencies = [
     "torchaudio>=2.3.0",
     "torch-geometric>=2.6.1",
     "pyqt6>=6.9.1",
+    "py7zr>=1.0.0",
 ]
 
 # UV configuration for PyTorch with CUDA 12.8
