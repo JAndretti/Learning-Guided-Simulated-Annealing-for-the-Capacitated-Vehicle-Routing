@@ -284,7 +284,6 @@ def update_best_solution(
 # CAPACITY AND REWARD PROCESSING
 # ================================
 
-
 def calculate_reward(
     config: dict,
     actual_improvement: torch.Tensor,
@@ -299,34 +298,44 @@ def calculate_reward(
         return None
 
     reward_signal = torch.zeros_like(actual_improvement).view(-1, 1)
-    if config["REWARD"] == "null":
-        pass
 
-    elif config["REWARD"] == "immediate":
+    # 1. Calculate Base Reward Strategy
+    if config["REWARD"] == "immediate":
+        # Determine value based on improvement
+        if config["NORMALIZE_REWARD"]:
+            value = normalize(actual_improvement, initial_cost)
+        else:
+            value = actual_improvement
+
+        # Apply immediate-specific logic:
+        # - Invalid solutions get -1.5
+        # - Zero improvement gets 0.0
+        # - Otherwise use calculated value
         reward_signal = torch.where(
             ~is_valid.bool().squeeze(-1),
             -1.5,
             torch.where(
                 actual_improvement == 0,
                 0.0,
-                normalize(actual_improvement, initial_cost),
+                value,
             ),
         ).view(-1, 1)
+
     elif config["REWARD"] == "min_cost":
         reward_signal = ((initial_cost + best_cost) / initial_cost).view(-1, 1)
 
     elif config["REWARD"] == "primal":
         reward_signal = -cumulative_cost.view(-1, 1)
 
+    # 2. Apply Global Invalid Penalty (overrides specific strategy penalties)
     if config["REWARD_VALID"]:
-        reward_signal[~is_valid.view(-1, 1)] = -1.0  # Penalize invalid solutions
+        reward_signal[~is_valid.view(-1, 1)] = -1.0
 
+    # 3. Apply Last Step Bonus (overrides previous rewards)
     if config["REWARD_LAST"] and last_step:
         reward_signal = config["REWARD_LAST_SCALE"] * (
             (initial_cost - best_cost) / initial_cost
         ).view(-1, 1)
-    if config["NORMALIZE_REWARD"]:
-        reward_signal = normalize(actual_improvement, initial_cost)
 
     return reward_signal
 

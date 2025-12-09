@@ -20,7 +20,7 @@ HEURISTIC: "insertion"                 # Local search method (insertion, swap, t
 UPDATE_METHOD: "valid"                  # Update method after heuristic
 INIT: "random"                        # Initial solution method
 MULTI_INIT: True                       # Use multiple initial solutions
-INIT_LIST: ["isolate","random", "sweep"] # List of initial solution methods
+INIT_LIST: ["isolate","random", "sweep","nearest_neighbor"] # List of initial solution methods
 
 # =============== Reward ===============
 
@@ -28,7 +28,7 @@ REWARD: "immediate"                    # Reward calculation method
 REWARD_LAST: False
 REWARD_LAST_ADD: 0.001
 REWARD_VALID: False                   # penalize invalid solutions in reward
-NORMALIZE_REWARD: False               # Normalize reward to have mean 0 and std 1
+NORMALIZE_REWARD: True               # Normalize reward to have mean 0 and std 1
 
 # =============== Model Architecture ===============
 MODEL: "seq"                           # Model type: pairs, seq
