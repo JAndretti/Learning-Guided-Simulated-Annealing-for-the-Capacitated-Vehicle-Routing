@@ -5,6 +5,7 @@ import random
 import numpy as np
 import yaml
 import matplotlib.pyplot as plt
+from rich import print
 
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
@@ -40,6 +41,7 @@ if __name__ == "__main__":
         "BASELINE": False,
         "GREEDY": False,
     }
+    print("Using device:", cfg["DEVICE"])
     LOAD = {50: 40, 100: 50}
     cfg["MAX_LOAD"] = LOAD[cfg["PROBLEM_DIM"]]
 
@@ -67,9 +69,11 @@ if __name__ == "__main__":
                 model_path,
                 "192_loss_19.997517.pt",
             ),
+            map_location=torch.device("cpu"),
             weights_only=True,
         )
     )
+    actor.to(cfg["DEVICE"])
 
     hp_data.update(cfg)
     cfg = hp_data
@@ -122,9 +126,7 @@ if __name__ == "__main__":
             instance_nearest_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="Solution with Nearest Neighbor for Instance {} / ".format(
-                i + 1
-            ),
+            title="Solution with Nearest Neighbor for Instance {} / ".format(i + 1),
         )
         plt.savefig(f"example/plots/instance_{i + 1}_init_nearest.png")
         plt.close()
