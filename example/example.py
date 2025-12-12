@@ -91,7 +91,11 @@ if __name__ == "__main__":
 
     # Generate initial solution for problems
     init_x = problem.generate_init_state(cfg["INIT"], False)
+    init_x_cost = torch.mean(problem.cost(init_x)).item()
+    print(f"Initial solution cost: {init_x_cost:.2f}")
     init_nearest_neighbor = problem.generate_init_state("nearest_neighbor", False)
+    init_nearest_cost = torch.mean(problem.cost(init_nearest_neighbor)).item()
+    print(f"Nearest Neighbor solution cost: {init_nearest_cost:.2f}")
 
     # Save initial plots
     if not os.path.exists("example/plots"):
@@ -143,6 +147,7 @@ if __name__ == "__main__":
         )
 
     best_costs = res["min_cost"]
+    print(f"Best solution costs: {torch.mean(best_costs).item():.2f}")
     best_solutions = res["best_x"]
 
     data, sol = prepare_plot(problem, best_solutions)

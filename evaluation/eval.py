@@ -108,7 +108,7 @@ FOLDER = args.FOLDER
 BASE_PATH = "res/" + FOLDER + "/"
 if not os.path.exists(BASE_PATH):
     os.makedirs(BASE_PATH, exist_ok=True)
-PATH = "wandb/Neural_Simulated_Annealing/"
+PATH = "wandb/LGSA/"
 RESULTS_FILE_ALL_MODEL = BASE_PATH + (f"res_all_model_{cfg['PROBLEM_DIM']}.csv")
 RESULTS_FILE = BASE_PATH + f"res_model_{cfg['PROBLEM_DIM']}.csv"
 MODEL_NAMES = glob2.glob(os.path.join(PATH, FOLDER, "models", "*"))
