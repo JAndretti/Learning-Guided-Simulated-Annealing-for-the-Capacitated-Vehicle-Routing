@@ -1,53 +1,43 @@
 [project]
-name = "nsa-cvrp-ppo"
+name = "LGSA"
 version = "0.1.0"
 description = "A Python package for solving the Capacitated Vehicle Routing Problem (CVRP) using Proximal Policy Optimization (PPO)."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "ezodf>=0.3.2",
     "glob2>=0.7",
     "ipykernel>=6.29.5",
-    "kaleido>=1.0.0",
     "loguru>=0.7.3",
-    "lxml>=6.0.0",
     "matplotlib>=3.10.1",
-    "nbformat>=4.2.0",
     "numpy>=2.2.4",
     "ortools>=9.12.4544",
     "pandas>=2.2.3",
-    "plotly>=6.1.2",
     "pyyaml>=6.0.2",
     "rich>=14.0.0",
-    "scikit-learn>=1.6.1",
-    "scipy>=1.15.2",
-    "seaborn>=0.13.2",
-    "snakeviz>=2.2.2",
     "tqdm>=4.67.1",
     "vrplib>=1.5.1",
     "wandb>=0.19.9",
-    "torch==2.8.0", # Compatible with CUDA 12.8
-    "torchvision>=0.18.0",
-    "torchaudio>=2.3.0",
-    "torch-geometric>=2.6.1",
-    "pyqt6>=6.9.1",
+    "torch==2.9.1", 
+    "torchvision>=0.24.1",
+    "torchaudio>=2.9.1",
+    "torch-geometric>=2.7.0",
     "py7zr>=1.0.0",
 ]
 
-# UV configuration for PyTorch with CUDA 12.8
+# UV configuration for PyTorch with CUDA 13.0
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 torchvision = [
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 torchaudio = [
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
 
-# Declaration of the PyTorch index for CUDA 12.8
+# Declaration of the PyTorch index for CUDA 13.0
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true  # Use this index only for PyTorch

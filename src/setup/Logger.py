@@ -1,14 +1,15 @@
-import os
-from typing import Callable, Optional
-import logging
-import shutil
 import datetime
-import wandb
+import logging
+import os
+import shutil
+from typing import Callable, Optional
+
 import yaml
 
+import wandb
+from model import SAModel
 
 from .HP import _HP
-from model import CVRPActor
 
 
 def save_HP(path, cfg):
@@ -39,7 +40,8 @@ class WandbLogger:
     def __init__(
         self, code_dir: Optional[str], num_models_to_keep: int, HP: "_HP"
     ) -> None:
-        wandb_project_path = os.path.join(WANDB_DIRECTORY, HP["PROJECT"])
+        project_name = str(HP["PROJECT"]) if HP.get("PROJECT") else "default_project"
+        wandb_project_path = os.path.join(WANDB_DIRECTORY, project_name)
 
         os.makedirs(wandb_project_path, exist_ok=True)
         with open("src/key.txt", "r") as key_file:
@@ -71,6 +73,11 @@ class WandbLogger:
         self.code_dir = code_dir
         self.code_extensions = ["py", "yaml"]
         self.HP = HP
+        save_HP(self.model_dir, self.HP)
+
+    @classmethod
+    def get_model_dir(cls) -> str:
+        return cls._instance.model_dir
 
     @classmethod
     def init(cls, code_dir, num_models_to_keep, HP):
@@ -147,7 +154,7 @@ class WandbLogger:
     def log_model(
         cls,
         save_func: Callable[[str], None],
-        model: CVRPActor,
+        model: SAModel,
         val_loss: float,
         epoch: int,
         model_name: str,
@@ -177,7 +184,7 @@ class WandbLogger:
             )
 
             save_func(file_path, model)
-            save_HP(cls._instance.model_dir, cls._instance.HP)
+            # save_HP(cls._instance.model_dir, cls._instance.HP)
             return True, file_path
 
         else:

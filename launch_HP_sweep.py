@@ -1,10 +1,10 @@
-import yaml
 import random
 import subprocess
 from itertools import product
 from multiprocessing import Process, Queue
-
 from time import sleep
+
+import yaml
 from loguru import logger
 
 logger.remove()
@@ -69,7 +69,7 @@ def run_training_script(gpu_id, hyperparameter_names, hyperparameter_values):
     cmd_str = f"CUDA_VISIBLE_DEVICES={gpu_id} python3 {TRAINING_SCRIPT_PATH}"
 
     for hp_name, hp_val in zip(hyperparameter_names, hyperparameter_values):
-        cmd_str += f" --{hp_name} {hp_val}"
+        cmd_str += f" --{hp_name} \"{hp_val}\""  # cmd_str += f" --{hp_name} \"{hp_val}\""
 
     subprocess.run(cmd_str, shell=True)
 
@@ -88,7 +88,6 @@ def execute_process(gpu_queue, hyperparameter_names, hyperparameter_queue):
 
     while True:
         if not gpu_queue.empty():
-
             gpu_id = gpu_queue.get()  # get a gpu_id from the queue
 
             if not hyperparameter_queue.empty():
@@ -115,7 +114,6 @@ def execute_process(gpu_queue, hyperparameter_names, hyperparameter_queue):
 
 
 if __name__ == "__main__":
-
     # Create a queue to store the gpu_ids
     gpu_queue = Queue()
     for gpu_id in GPU_AVAILABLES:
