@@ -1,11 +1,13 @@
 from typing import Dict, Tuple
+
 import torch
+from tqdm import tqdm
+
 from model import SAModel
 from problem import Problem
 from utils import capacity_utilization, extend_to
-from .scheduler import Scheduler
-from tqdm import tqdm
 
+from .scheduler import Scheduler
 
 # ================================
 # UTILITY FUNCTIONS
@@ -157,13 +159,9 @@ def generate_action(
     with torch.no_grad():
         with torch.amp.autocast(device.type):
             if baseline:
-                res = actor.baseline_sample(
-                    current_state, random_std=random_std, problem=problem
-                )
+                res = actor.baseline_sample(current_state, problem=problem)
             else:
-                res = actor.sample(
-                    current_state, greedy=greedy, problem=problem, train=train
-                )
+                res = actor.sample(current_state, greedy=greedy, problem=problem)
     if device.type == "cuda":
         torch.cuda.empty_cache()
     return res
@@ -284,6 +282,7 @@ def update_best_solution(
 # CAPACITY AND REWARD PROCESSING
 # ================================
 
+
 def calculate_reward(
     config: dict,
     actual_improvement: torch.Tensor,
@@ -311,7 +310,7 @@ def calculate_reward(
         # - Invalid solutions get -1.5
         # - Zero improvement gets 0.0
         # - Otherwise use calculated value
-        reward_signal = torch.where( 
+        reward_signal = torch.where(
             ~is_valid.bool().squeeze(-1),
             -1.5,
             torch.where(
@@ -320,7 +319,6 @@ def calculate_reward(
                 value,
             ),
         ).view(-1, 1)
-        
 
     elif config["REWARD"] == "min_cost":
         reward_signal = ((initial_cost + best_cost) / initial_cost).view(-1, 1)
@@ -438,18 +436,17 @@ def sa_train(
     # Progress bar setup
     desc = ("Train/ " if train else "Test/ ") + desc_tqdm
 
+    step = config["OUTER_STEPS"] if train else config["TEST_OUTER_STEPS"]
     # Main optimization loop
     for step in tqdm(
-        range(config["OUTER_STEPS"]),
+        range(step),
         desc=desc,
         colour="green",
         unit="step",
         leave=False,
     ):
-
         # Inner loop at fixed temperature
         for inner_step in range(config["INNER_STEPS"]):
-
             # Record current state if needed
             if record_state:
                 tracking["state_history"].append(current_state)

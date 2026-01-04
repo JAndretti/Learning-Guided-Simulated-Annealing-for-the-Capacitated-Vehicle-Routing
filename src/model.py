@@ -1,9 +1,11 @@
 from typing import Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from problem import CVRP
 from utils import repeat_to
 
 
@@ -34,23 +36,31 @@ class SAModel(nn.Module):
         self.generator = torch.Generator(device=self.device)
         self.generator.manual_seed(seed)
 
-    def get_logits(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+    def get_logits(
+        self, state: torch.Tensor, action: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
     def sample(
         self, state: torch.Tensor, greedy: bool = False, **kwargs
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
-    def baseline_sample(self, state: torch.Tensor, **kwargs) -> torch.Tensor:
+    def baseline_sample(
+        self, state: torch.Tensor, **kwargs
+    ) -> Tuple[torch.Tensor, None, torch.Tensor]:
+        # Output must match sample output
         raise NotImplementedError
 
     @staticmethod
     def init_weights(m: nn.Module) -> None:
-        if type(m) is nn.Linear:
-            nn.init.xavier_uniform_(m.weight)
+        if isinstance(m, nn.Linear):
+            # Orthogonal init is the gold standard for PPO
+            nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+
+            # Biases are usually set to 0 rather than 0.01
             if m.bias is not None:
-                m.bias.data.fill_(0.01)
+                nn.init.constant_(m.bias, 0.0)
 
 
 class CVRPActorPairs(SAModel):
@@ -318,7 +328,6 @@ class CVRPActorPairs(SAModel):
 
 
 class CVRPActor(SAModel):
-
     def __init__(
         self,
         embed_dim: int = 32,
@@ -348,8 +357,27 @@ class CVRPActor(SAModel):
             device=device,
         )
 
+        # Apply the generic PPO init to the WHOLE network
         self.city1_net.apply(self.init_weights)
+
+        # 3. Manually overwrite the Output Layer (The last layer in the list)
+        # We access it using [-1] because it is the last item added to layers[]
+        last_layer = self.city1_net[-1]
+
+        # IF THIS IS AN ACTOR (Policy):
+        # We use 0.01 so actions start out random/uniform (Crucial for PPO)
+        nn.init.orthogonal_(last_layer.weight, gain=0.01)
+
+        # Ensure bias is 0 for the output
+        if last_layer.bias is not None:
+            nn.init.constant_(last_layer.bias, 0.0)
+
         self.city2_net.apply(self.init_weights)
+        last_layer = self.city2_net[-1]
+        nn.init.orthogonal_(last_layer.weight, gain=0.01)
+        # Ensure bias is 0 for the output
+        if last_layer.bias is not None:
+            nn.init.constant_(last_layer.bias, 0.0)
 
     def sample_from_logits(
         self, logits: torch.Tensor, greedy: bool = False, one_hot: bool = False
@@ -394,10 +422,9 @@ class CVRPActor(SAModel):
         return log_probs_c1, log_probs_c2
 
     def baseline_sample(
-        self, state: torch.Tensor, **kwargs
-    ) -> Tuple[torch.Tensor, None]:
+        self, state: torch.Tensor, problem=CVRP, **kwargs
+    ) -> Tuple[torch.Tensor, None, torch.Tensor]:
         """Generate baseline sample using uniform probabilities."""
-        problem = kwargs.get("problem", None)
         n_problems, problem_dim, _ = state.shape
         x = state[:, :, 0]
         mask = x.squeeze(-1) != 0
@@ -437,10 +464,9 @@ class CVRPActor(SAModel):
         return action, None, mask
 
     def sample(
-        self, state: torch.Tensor, greedy: bool = False, train: bool = False, **kwargs
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, state: torch.Tensor, greedy: bool = False, problem=CVRP, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample an action pair from the current state."""
-        problem = kwargs.get("problem", None)
         c1_state, n_problems, x = self._prepare_features_city1(state)
 
         logits = self.city1_net(c1_state)[..., 0]
@@ -458,7 +484,7 @@ class CVRPActor(SAModel):
         logits = self.city2_net(c2_state)[..., 0]
         mask = torch.ones_like(logits, dtype=torch.bool)
         if self.method == "valid":
-            mask = problem.get_action_mask(x, c1)
+            mask = problem.get_action_mask(solution=x, node_pos=c1)
             logits[~mask] = -float("inf")  # Mask invalid actions
         else:
             arange = torch.arange(n_problems).to(logits.device)
@@ -536,23 +562,9 @@ class CVRPActor(SAModel):
         """Helper method to prepare features from state."""
         n_problems, problem_dim, dim = state.shape
 
-        x, coords, *extra_features = torch.split(
-            state, [1, 2] + [1] * (dim - 3), dim=-1
-        )
-        # Gather coordinate information
-        coords = coords.gather(1, x.long().expand_as(coords))
-        coords_prev = torch.cat([coords[:, -1:, :], coords[:, :-1, :]], dim=1)
-        coords_next = torch.cat([coords[:, 1:, :], coords[:, :1, :]], dim=1)
-        # Add temp and time to the concatenated state
-        c_state = torch.cat(
-            [
-                coords,
-                coords_prev,
-                coords_next,
-            ]
-            + extra_features,
-            -1,
-        )
+        x = state[:, :, :1]
+        c_state = state[:, :, 1:]
+
         if self.method == "rm_depot":
             mask = x.squeeze(-1) != 0
             c_state = c_state[mask].view(n_problems, -1, c_state.size(-1))
@@ -560,7 +572,7 @@ class CVRPActor(SAModel):
 
     def _prepare_features_city2(
         self, c1_state: torch.Tensor, c1: torch.Tensor, n_problems: int
-    ) -> Tuple[torch.Tensor]:
+    ) -> torch.Tensor:
         """Helper method to prepare features from state."""
         # Second city encoding
         arange = torch.arange(n_problems)
@@ -603,6 +615,13 @@ class CVRPCritic(nn.Module):
             device=device,
         )
         self.q_func.apply(self.init_weights)
+        last_layer = self.q_func[-1]
+        # IF THIS IS A CRITIC (Value Function):
+        # We use 1.0 because the value estimate shouldn't be squashed too small
+        nn.init.orthogonal_(last_layer.weight, gain=1.0)
+        # Ensure bias is 0 for the output
+        if last_layer.bias is not None:
+            nn.init.constant_(last_layer.bias, 0.0)
 
     @staticmethod
     def init_weights(m: nn.Module) -> None:
@@ -615,17 +634,7 @@ class CVRPCritic(nn.Module):
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         """Forward pass computing state values."""
         n_problems, problem_dim, dim = state.shape
-        num_extra_features = dim - 3
-        x, coords, *extra_features = torch.split(
-            state, [1, 2] + [1] * num_extra_features, dim=-1
-        )
-
-        # Gather current, previous and next coordinates
-        coords = coords.gather(1, x.long().expand_as(coords))
-        coords_prev = torch.cat([coords[:, -1:, :], coords[:, :-1, :]], dim=1)
-        coords_next = torch.cat([coords[:, 1:, :], coords[:, :1, :]], dim=1)
-
-        state = torch.cat([coords, coords_prev, coords_next] + extra_features, -1)
+        state = state[:, :, 1:]
 
         q_values = self.q_func(state).view(n_problems, problem_dim)
 

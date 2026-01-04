@@ -1,29 +1,19 @@
+import os
 import random
+import sys
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
-import matplotlib.pyplot as plt
-from loguru import logger  # Enhanced logging capabilities
-
-# Remove default logger
-logger.remove()
-# Add custom logger with colored output
-logger.add(
-    lambda msg: print(msg, end=""),
-    format=(
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "  # Timestamp in green
-        "<blue>{file}:{line}</blue> | "  # File and line in blue
-        "<yellow>{message}</yellow>"  # Message in yellow
-    ),
-    colorize=True,
-)
-
-import sys
-import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
+from model import SAModel
 from problem import CVRP
+from utils import setup_logging
+
+logger = setup_logging()
 
 
 # Load model hyperparameters
@@ -62,10 +52,10 @@ def extract_loss(filename):
 
 
 # Load model with smallest loss
-def load_model(model: torch.nn.Module, folder: str, special_key: str = None):
+def load_model(model: torch.nn.Module, folder: str, special_key: str = "") -> SAModel:
     """Load model with smallest loss."""
     files = [f for f in os.listdir(folder) if f.endswith(".pt")]
-    if special_key is not None:
+    if len(special_key) > 0:
         files = [f for f in files if special_key in f]
     if files:
         best_file = min(files, key=extract_loss)

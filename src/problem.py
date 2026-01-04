@@ -4,32 +4,35 @@
 from abc import ABC, abstractmethod  # Abstract base classes for problem definition
 from typing import (
     Dict,
-    Tuple,
     Optional,
+    Tuple,
     Union,
 )  # Type hints for better code readability
+
 import torch  # PyTorch for tensor operations
 import torch.nn.functional as F
 
-from utils import (
-    repeat_to,
-    calculate_client_angles,
-    calculate_distance_matrix,
-    is_feasible,
-)
 from algo import (
-    generate_isolate_solution,
-    generate_sweep_solution,
-    random_init_batch,
-    generate_Clark_and_Wright,
-    generate_nearest_neighbor,
-    construct_cvrp_solution,
     cheapest_insertion,
-    path_cheapest_arc,
+    construct_cvrp_solution,
     farthest_insertion,
+    generate_Clark_and_Wright,
+    generate_isolate_solution,
+    generate_nearest_neighbor,
+    generate_sweep_solution,
+    insertion,
+    path_cheapest_arc,
+    random_init_batch,
     swap,
     two_opt,
-    insertion,
+)
+from utils import (
+    calculate_client_angles,
+    calculate_detour_features,
+    calculate_distance_matrix,
+    calculate_knn_isolation,
+    is_feasible,
+    repeat_to,
 )
 
 init_methods = {
@@ -62,19 +65,6 @@ class Problem(ABC):
         self.device = device
         self.generator = torch.Generator(device=device)
 
-    def gain(self, s: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
-        """
-        Calculate improvement gained by applying action to solution.
-
-        Args:
-            s: Current solution
-            a: Action to apply
-
-        Returns:
-            Cost difference between current and updated solution
-        """
-        return self.cost(s) - self.cost(self.update(s, a))
-
     def manual_seed(self, seed: int) -> None:
         """
         Set random generator seed for reproducibility.
@@ -86,12 +76,12 @@ class Problem(ABC):
         self.generator.manual_seed(seed)
 
     @abstractmethod
-    def cost(self, s: torch.Tensor) -> torch.Tensor:
+    def cost(self, solution: torch.Tensor) -> torch.Tensor:
         """
         Calculate cost of a solution.
 
         Args:
-            s: Solution tensor
+            solution: Solution tensor
 
         Returns:
             Cost tensor
@@ -99,7 +89,9 @@ class Problem(ABC):
         pass
 
     @abstractmethod
-    def update(self, s: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+    def update(
+        self, solution: torch.Tensor, action: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Apply an action to modify a solution.
 
@@ -113,7 +105,7 @@ class Problem(ABC):
         pass
 
     @abstractmethod
-    def set_params(self, **kwargs) -> None:
+    def set_params(self, params) -> None:
         """
         Set problem parameters.
 
@@ -123,7 +115,7 @@ class Problem(ABC):
         pass
 
     @abstractmethod
-    def generate_params(self) -> Dict[str, torch.Tensor]:
+    def generate_params(self) -> None:
         """
         Generate problem parameters.
 
@@ -140,7 +132,7 @@ class Problem(ABC):
         Returns:
             Tensor representation of the problem state
         """
-        pass
+        return torch.Tensor()
 
     @abstractmethod
     def generate_init_state(self) -> torch.Tensor:
@@ -196,7 +188,6 @@ class CVRP(Problem):
         self,
         dim: int = 50,
         n_problems: int = 256,
-        capacities: Union[int, torch.Tensor] = 30,
         device: str = "cpu",
         params: Optional[Dict] = None,
     ):
@@ -217,34 +208,12 @@ class CVRP(Problem):
         """
         super().__init__(device)
         self.params = params or {}
-        self._init_problem_parameters(dim, n_problems, capacities)
+        self.n_problems = n_problems
+        self.dim = dim
 
     # --------------------------------
     # Initialization and Configuration
     # --------------------------------
-
-    def _init_problem_parameters(self, dim, n_problems, capacities):
-        """
-        Initialize problem size and constraints.
-
-        Args:
-            dim: Problem dimension (number of clients)
-            n_problems: Number of problem instances in batch
-            capacities: Vehicle capacity constraint(s)
-        """
-        self.n_problems = n_problems
-        self.dim = dim
-        if isinstance(capacities, int):
-            self.capacity = torch.full(
-                (self.n_problems, 1),
-                capacities,
-                device=self.device,
-                dtype=torch.float32,
-            )
-        elif isinstance(capacities, torch.Tensor):
-            self.capacity = capacities.to(self.device)
-        else:
-            raise ValueError("capacities must be either an int or a torch.Tensor")
 
     def set_heuristic(self, heuristic: list) -> None:
         """
@@ -278,8 +247,6 @@ class CVRP(Problem):
                     raise ValueError(f"Unsupported heuristics: {heuristic}")
             else:
                 raise ValueError("Only up to 2 heuristics are supported.")
-        else:
-            raise ValueError("Heuristic must be provided as a list or str.")
 
     def apply_heuristic(
         self, solution: torch.Tensor, action: torch.Tensor
@@ -315,8 +282,11 @@ class CVRP(Problem):
             self.coords = params["coords"].to(self.device)
         if "demands" in params:
             self.demands = params["demands"].to(self.device)
+        if "capacity" in params:
+            self.capacity = params["capacity"].to(self.device)
         self.angles = calculate_client_angles(self.coords)
         self.matrix = calculate_distance_matrix(self.coords)
+        self.isolation_score = calculate_knn_isolation(self.matrix, k=5)
         # Calculate distances from depot to clients and normalize row-wise to [0,1]
         self.dist_to_depot = self.matrix[:, 0, 0:]  # Distances from depot to clients
         # Find min and max values per batch for normalization
@@ -328,6 +298,10 @@ class CVRP(Problem):
         self.dist_to_depot = ((self.dist_to_depot - min_dist) / divisor).unsqueeze(-1)
         # coords of depot
         self.depot_coords = self.coords[:, 0, :].unsqueeze(1)  # [batch, 1, 2]
+        # q / Q demand_normalized
+        self.demand_normalized = (self.demands / self.capacity).unsqueeze(
+            -1
+        )  # [batch, num_nodes+1, 1]
 
     # --------------------------------
     # Problem Instance Generation
@@ -337,9 +311,10 @@ class CVRP(Problem):
         self,
         mode: str = "train",
         pb: bool = False,
-        coords: torch.Tensor = None,
-        demands: torch.Tensor = None,
-    ) -> Dict[str, torch.Tensor]:
+        coords: torch.Tensor = torch.Tensor(),
+        demands: torch.Tensor = torch.Tensor(),
+        capacities: Union[int, torch.Tensor] = 30,
+    ) -> None:
         """
         Generate problem instances with optional clustering.
 
@@ -357,6 +332,14 @@ class CVRP(Problem):
         if mode == "test":
             self.manual_seed(0)  # Fixed seed for reproducibility in test mode
 
+        if isinstance(capacities, int):
+            capacities = torch.full(
+                (self.n_problems, 1),
+                capacities,
+                device=self.device,
+                dtype=torch.float32,
+            )
+
         if pb:  # Use provided problem data
             if coords.shape[0] != self.n_problems:
                 raise ValueError(
@@ -366,10 +349,11 @@ class CVRP(Problem):
                 raise ValueError(
                     f"Expected {self.n_problems} problems, got {demands.shape[0]}"
                 )
-            params = {"coords": coords, "demands": demands}
+            params = {"coords": coords, "demands": demands, "capacity": capacities}
 
         else:
             params = self._generate_random_instances()
+            params["capacity"] = capacities
 
         self.set_params(params)
 
@@ -413,6 +397,95 @@ class CVRP(Problem):
     # State and Solution Representation
     # --------------------------------
 
+    def get_distance_to_centroid(self, solution: torch.Tensor) -> torch.Tensor:
+        """
+        Calculates the Euclidean distance between each node and the centroid
+        (center of gravity) of the route it belongs to.
+
+        Args:
+            solution: [batch, seq_len, 1]
+
+        Returns:
+            [batch, seq_len, 1] Distance to centroid for each node
+        """
+        # 1. Get coordinates aligned with the solution sequence [B, L, 2]
+        coords = self.get_coords(solution)
+
+        # 2. Prepare tensors for scatter operations
+        # We need to know the max segment ID to size our tensors correctly
+        num_routes = self.segment_ids.max() + 1
+        batch_size, seq_len = self.segment_ids.shape
+
+        # Initialize Sums and Counts
+        # shape: [B, num_routes, 2]
+        route_coord_sums = torch.zeros(
+            batch_size, int(num_routes), 2, device=self.device, dtype=coords.dtype
+        )
+        # shape: [B, num_routes, 1]
+        route_node_counts = torch.zeros(
+            batch_size, int(num_routes), 1, device=self.device, dtype=coords.dtype
+        )
+
+        # 3. Aggregate data per route (Scatter Add)
+        # self.segment_ids must be expanded to [B, L, 2] for coords scatter
+        segment_ids_expanded = self.segment_ids.unsqueeze(-1).expand(-1, -1, 2)
+
+        # Sum X and Y for each route
+        route_coord_sums.scatter_add_(1, segment_ids_expanded, coords)
+
+        # Count nodes in each route (summing 1s)
+        ones = torch.ones(
+            batch_size, seq_len, 1, device=self.device, dtype=coords.dtype
+        )
+        # Only count actual nodes (where segment_id > 0), ignore depot padding if necessary
+        # However, your segment_ids usually assigns 0 to depot/padding.
+        # Ideally we only care about actual routes.
+        # Using self.mask ensures we don't count padding/depot visits as "route nodes"
+        # if your segment logic treats them as separate.
+        # Assuming self.segment_ids identifies valid routes for clients:
+        route_node_counts.scatter_add_(1, self.segment_ids.unsqueeze(-1), ones)
+
+        # 4. Calculate Centroids
+        # Avoid division by zero for empty/padding routes
+        route_node_counts = torch.clamp(route_node_counts, min=1.0)
+        route_centroids = route_coord_sums / route_node_counts  # [B, num_routes, 2]
+
+        # 5. Map centroids back to node positions
+        # Gather the centroid relevant to each node in the sequence
+        # Shape becomes [B, L, 2] matching 'coords'
+        node_centroids = route_centroids.gather(1, segment_ids_expanded)
+
+        # 6. Calculate Euclidean Distance
+        dists = (coords - node_centroids).norm(p=2, dim=-1, keepdim=True)
+
+        return dists
+
+    def set_feature_flags(self, feature_flags: Dict[str, bool]) -> None:
+        """Store feature flags and pre-calculate input dimension."""
+        self.feature_flags = feature_flags
+
+    def get_input_dim(self) -> int:
+        """Dynamically calculates the channel dimension 'c' based on active flags."""
+        # Base dimensions for each group (Update these numbers based on your exact tensor sizes!)
+        dims = {
+            "static": 7,  # x, y, th, d, is_depot, knn, q/Q
+            "topology": 4,  # prev_x, prev_y, next_x, next_y
+            "detour": 1,  # detour
+            "centroid": 1,  # centroid_dist
+            "route_status": 4,  # load/Q, slack, q/load, route_cost_norm
+            "route_cost": 1,  # cost of current route
+            "route_pct": 1,  # capacity signal of the route
+            "slack": 1,  # (1 - route_pct)
+            "node_pct": 1,  # node demand percentage with route capacity
+            "meta": 2,  # temp, progress
+        }
+
+        total_dim = 0
+        for group, is_active in self.feature_flags.items():
+            if is_active:
+                total_dim += dims[group]
+        return total_dim
+
     def build_state_components(self, x, temp, time):
         """
         Build state components for the model.
@@ -427,24 +500,63 @@ class CVRP(Problem):
         Returns:
             List of state component tensors
         """
+        flags = self.feature_flags
+        components = [x]
         padding = max(0, x.size(1) - self.state_encoding.size(1))
-        padded_coords = F.pad(self.state_encoding, (0, 0, 0, padding))
-        is_depot = (x == 0).long()  # Identify depot visits
-        depot_coords_pad = self.depot_coords.repeat(1, padded_coords.size(1), 1)
+        padded_coords = F.pad(self.state_encoding, (0, 0, 0, padding)).gather(
+            1, x.expand(-1, -1, 2)
+        )
 
-        lst = [
-            x,  # Current solution
-            padded_coords,  # Node coordinates
-            depot_coords_pad,
-            is_depot,  # Depot indicator
-            self.angles.gather(1, x),  # Angles in solution order
-            self.dist_to_depot.gather(1, x),  # Distance to depot
-            *self.get_percentage_demands(),  # Demand percentages
-            self.cost_per_route(x),  # Route segment costs
-            repeat_to(temp, x),  # Temperature parameter
-            repeat_to(time, x),  # Time information
-        ]
-        return lst
+        # --- 1. STATIC ---
+        if flags.get("static", True):
+            is_depot = (x == 0).long()
+
+            components.extend(
+                [
+                    padded_coords,  # coords (2)
+                    is_depot,  # is_depot (1)
+                    self.angles.gather(1, x),  # theta (1)
+                    self.dist_to_depot.gather(1, x),  # dist (1)
+                    self.demand_normalized.gather(1, x),  # Normalized demands
+                    self.isolation_score.gather(1, x),  # Isolation score
+                ]
+            )
+        # --- 2. TOPOLOGY ---
+        if flags.get("topology", True):
+            prev_coords = torch.roll(padded_coords, shifts=1, dims=1)
+            next_coords = torch.roll(padded_coords, shifts=-1, dims=1)
+            components.extend([prev_coords, next_coords])
+
+        # --- 3. LOCAL COST ---
+        if flags.get("detour", True):
+            components.append(calculate_detour_features(x, self.matrix))
+
+        if flags.get("centroid", False):
+            components.append(self.get_distance_to_centroid(x))
+
+        # --- 4. ROUTE STATUS ---
+        # Pre-calculate only if needed to save compute
+        if any(flags.get(k) for k in ["route_pct", "slack", "node_pct"]):
+            node_pct, route_pct, remaining_capacity_fraction = (
+                self.get_percentage_demands()
+            )
+
+            if flags.get("route_pct", True):
+                components.append(route_pct)
+
+            if flags.get("slack", False):
+                components.append(remaining_capacity_fraction)
+
+            if flags.get("node_pct", False):
+                components.append(node_pct)
+
+        if flags.get("route_cost", False):
+            components.append(self.cost_per_route(x))
+        # --- 5. META ---
+        if flags.get("meta", True):
+            components.extend([repeat_to(temp, x), repeat_to(time, x)])
+
+        return components
 
     @property
     def state_encoding(self) -> torch.Tensor:
@@ -483,14 +595,12 @@ class CVRP(Problem):
         return torch.gather(self.demands, 1, solution.squeeze(-1))
 
     def generate_init_state(
-        self, init_heuristic: str = None, multi_init: bool = False
+        self, init_heuristic: str = "", multi_init: bool = False
     ) -> torch.Tensor:
         """
         Generate initial solutions using specified algorithm or multiple methods
         if MULTI_INIT is enabled.
         """
-        # if param is not None:
-        #     self.params["INIT"] = param
 
         if multi_init:
             split_size = self.n_problems // len(self.params["INIT_LIST"])
@@ -558,7 +668,9 @@ class CVRP(Problem):
         segment_sums.scatter_add_(1, self.segment_ids, edge_lengths)
         route_costs = segment_sums.gather(1, self.segment_ids) * self.mask
 
-        return (route_costs / total_cost).unsqueeze(-1)
+        num_routes = self.segment_ids.max(dim=1, keepdim=True)[0]
+
+        return (route_costs * (num_routes / total_cost)).unsqueeze(-1)
 
     def get_edge_lengths_in_tour(self, solution: torch.Tensor) -> torch.Tensor:
         """
@@ -595,26 +707,35 @@ class CVRP(Problem):
         Returns:
             Tuple of three percentage tensors
         """
-        demands = self.ordered_demands
-        segment_demands = torch.zeros_like(demands)
-        segment_demands.scatter_add_(1, self.segment_ids, demands)
-        route_demands = segment_demands.gather(1, self.segment_ids)
+        node_demands = self.ordered_demands
+        total_demand_per_route = torch.zeros_like(node_demands)
+        total_demand_per_route.scatter_add_(1, self.segment_ids, node_demands)
+        route_demand_for_nodes = total_demand_per_route.gather(1, self.segment_ids)
+        # q / route Load
+        node_demand_fraction_of_route = torch.nan_to_num(
+            node_demands / route_demand_for_nodes, nan=0.0
+        )
+        # route Load / Q
+        route_demand_fraction_of_capacity = route_demand_for_nodes / self.capacity
 
-        node_pct = torch.nan_to_num(demands / route_demands, nan=0.0)
-        route_pct = route_demands / self.capacity
-        node_cap_pct = demands / self.capacity
+        # (Q - route Load) / Q
+        remaining_capacity_fraction = (
+            self.capacity - route_demand_for_nodes
+        ) / self.capacity
 
         return (
-            node_pct.unsqueeze(-1),
-            route_pct.unsqueeze(-1),
-            node_cap_pct.unsqueeze(-1),
+            node_demand_fraction_of_route.unsqueeze(-1),
+            route_demand_fraction_of_capacity.unsqueeze(-1),
+            remaining_capacity_fraction.unsqueeze(-1),
         )
 
     # --------------------------------
     # Solution Modification Heuristics
     # --------------------------------
 
-    def update(self, solution: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+    def update(
+        self, solution: torch.Tensor, action: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Modify solution by applying heuristic action.
 
@@ -654,10 +775,7 @@ class CVRP(Problem):
                 )
                 sol = torch.cat([sol, padding], dim=1)
 
-        elif (
-            self.params["UPDATE_METHOD"] == "free"
-            or self.params["UPDATE_METHOD"] == "valid"
-        ):
+        else:
             # Second approach: Apply heuristic directly on full solution
             # (including depot visits)
             sol = self.apply_heuristic(solution, action).long()
@@ -693,23 +811,23 @@ class CVRP(Problem):
 
     def _get_current_route_loads(self) -> torch.Tensor:
         """
-        Calcule la charge totale (somme des demandes) pour chaque route.
+        Calculate the total load (sum of demands) for each route.
 
         Returns:
-            Un tenseur [batch, max_routes] contenant la charge de chaque route.
-            L'index correspond à l'ID de la route (segment_id).
+            A tensor [batch, max_routes] containing the load of each route.
+            The index corresponds to the route ID (segment_id).
         """
-        # On trouve le nombre max de routes dans le batch pour dimensionner le tenseur
+        # Find the maximum number of routes in the batch to size the tensor
         num_routes = self.segment_ids.max() + 1
         route_loads = torch.zeros(
             self.n_problems,
-            num_routes,
+            int(num_routes.item()),
             device=self.device,
             dtype=self.ordered_demands.dtype,
         )
 
-        # scatter_add_ somme les demandes (self.ordered_demands)
-        # dans les bons "bins" de route (indexés par self.segment_ids)
+        # scatter_add_ sums the demands (self.ordered_demands)
+        # into the correct "bins" of routes (indexed by self.segment_ids)
         route_loads.scatter_add_(1, self.segment_ids, self.ordered_demands)
         return route_loads
 

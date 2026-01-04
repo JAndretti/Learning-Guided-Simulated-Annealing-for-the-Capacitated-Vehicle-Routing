@@ -1,12 +1,225 @@
-# =============== Hyperparameter Sweep ===============
+# src/HyperParameters/HP_sweep.yaml
+
 LOG: 
-- True  
+  - True
 
-HEURISTIC: 
-- 'swap'                 # Local search method (insertion, swap, two_opt)
-- 'insertion'                # Local search method (insertion, swap, two_opt)
-- 'two_opt'                 # Local search method (insertion, swap, two_opt)
+# The Ablation Configurations
+features:
+  # 1. Baseline (Full Model)
+  - {
+      static: true,          # coords, angles, depot info
+      topology: true,        # prev/next neighbors
+      detour: true,          # detour
+      centroid: True,        # route centroid
+      route_cost: True,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
 
-UPDATE_METHOD:
-- 'free'                  # Update method after heuristic
-- 'rm_depot'
+  # 2. static
+  - {
+      static: true,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: False,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 3. topology
+  - {
+      static: True,          # coords, angles, depot info
+      topology: true,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: False,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 4. local features
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: True,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 5. route / node load features
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: False,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 6. route cost feature
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: False,        # route centroid
+      route_cost: True,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+# feature one by one add
+  # 7. detour
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: False,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 8. centroid
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: True,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 9. route_pct
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: False,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 10. slack
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: False,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 11. node_pct
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: False,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  #12. node_pct removed
+  - {
+      static: True,          # coords, angles, depot info 
+      topology: True,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: True,        # route centroid
+      route_cost: True,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: False,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 13 slark removed
+  - {
+      static: True,          # coords, angles, depot info
+      topology: True,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: True,        # route centroid
+      route_cost: True,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: False,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 14 route_pct removed
+  - {
+      static: True,          # coords, angles, depot info
+      topology: True,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: True,        # route centroid
+      route_cost: True,     # cost of the current route
+      route_pct: False,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 15 route_cost removed
+  - {
+      static: True,          # coords, angles, depot info
+      topology: True,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: True,        # route centroid
+      route_cost: False,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 16 centroid removed
+  - {
+      static: True,          # coords, angles, depot info
+      topology: True,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: False,        # route centroid
+      route_cost: True,     # cost of the current route 
+      route_pct: True,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 17 detour removed
+  - {
+      static: True,          # coords, angles, depot info
+      topology: True,        # prev/next neighbors
+      detour: False,          # detour
+      centroid: True,        # route centroid
+      route_cost: True,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }
+  # 18 topology removed
+  - {
+      static: True,          # coords, angles, depot info
+      topology: False,        # prev/next neighbors
+      detour: True,          # detour
+      centroid: True,        # route centroid
+      route_cost: True,     # cost of the current route
+      route_pct: True,       # load of the route
+      slack: True,          # remaining load of the route
+      node_pct: True,       # node demand percentage with route capacity
+      meta: True,            # temp, time
+    }

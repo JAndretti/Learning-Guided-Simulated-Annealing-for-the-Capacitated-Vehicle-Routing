@@ -17,15 +17,13 @@ class SAModel(nn.Module):
         self.generator = torch.Generator(device=self.device)
         self.generator.manual_seed(seed)
 
-    def get_logits(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+    def get_logits(self, state: torch.Tensor, action: torch.Tensor):
         raise NotImplementedError
 
-    def sample(
-        self, state: torch.Tensor, greedy: bool = False, **kwargs
-    ) -> torch.Tensor:
+    def sample(self, state: torch.Tensor, greedy: bool = False, **kwargs):
         raise NotImplementedError
 
-    def baseline_sample(self, state: torch.Tensor, **kwargs) -> torch.Tensor:
+    def baseline_sample(self, state: torch.Tensor, **kwargs):
         raise NotImplementedError
 
     @staticmethod

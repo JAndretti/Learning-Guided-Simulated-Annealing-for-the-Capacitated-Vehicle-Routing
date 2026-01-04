@@ -1,8 +1,84 @@
+import os
+import random
+import sys
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
+from loguru import logger
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
+
+
+def setup_logging():
+    # 1. Clear default handlers
+    logger.remove()
+
+    # --- CUSTOM COLORS SETUP ---
+    # We explicitly tell loguru what colors to use for specific levels.
+    # <yellow> is standard, but you can also use hex codes like <#FFA500> for orange if your terminal supports it.
+    logger.level("INFO", color="<yellow>")  # Yellow/Orange for INFO
+    logger.level("WARNING", color="<red>")  # Red for WARNING
+    logger.level("ERROR", color="<magenta>")  # Bold Red for ERROR
+
+    # 2. Console Handler
+    # Notice the format ends with: <level>{message}</level>
+    # This tells loguru to paint the message text with the level's color defined above.
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    )
+    return logger
+
+
+def setup_device(device: str) -> str:
+    """
+    Configure compute device and logging based on availability.
+
+    Args:
+        device: Desired device string ('cuda', 'mps', or 'cpu')
+
+    Returns:
+        Selected device string ('cuda', 'mps', or 'cpu')
+    """
+
+    # CUDA device configuration
+    if "cuda" in device:
+        if torch.cuda.is_available():
+            os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+            torch.cuda.empty_cache()
+            torch.backends.cudnn.benchmark = True
+
+    # Apple Metal Performance Shaders (MPS) configuration
+    else:
+        if torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
+
+    return device
+
+
+def setup_reproducibility(seed: int) -> None:
+    """
+    Set random seeds for reproducible results across different runs.
+
+    Args:
+        seed: Random seed value
+    """
+    torch.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
+
+    # Ensure deterministic behavior (optional but recommended for full reproducibility)
+    # This makes operations like convolution deterministic but might slow down training slightly.
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def extend(tensor: torch.Tensor, dims: int) -> torch.Tensor:
@@ -25,6 +101,31 @@ def repeat_to(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
 def to_numpy(tensor: torch.Tensor) -> np.ndarray:
     """Convert torch tensor to numpy array."""
     return tensor.detach().cpu().numpy()
+
+
+# def init_problem(config: dict, dim: int, n_problem: int) -> Tuple[CVRP, int]:
+#     """Initialize the CVRP problem environment based on the provided configuration.
+
+#     Args:
+#         config (dict): Configuration dictionary containing problem parameters.
+
+#     Returns:
+#         CVRP: An instance of the CVRP problem environment.
+#         input_dim (int): The input dimension for the model.
+#     """
+#     # Initialize  problem environment
+#     problem = CVRP(
+#         dim=dim,
+#         n_problems=n_problem,
+#         device=config["DEVICE"],
+#         params=config,
+#     )
+#     problem.manual_seed(config["SEED"])
+#     problem.set_heuristic(config["HEURISTIC"])
+
+#     problem.set_feature_flags(config["features"])
+#     input_dim = problem.get_input_dim()
+#     return problem, input_dim
 
 
 def convert_tensor(a: torch.Tensor) -> torch.Tensor:
@@ -208,6 +309,83 @@ def calculate_distance_matrix(coords: torch.Tensor) -> torch.Tensor:
     return torch.cdist(coords, coords, p=2)
 
 
+def calculate_knn_isolation(dists: torch.Tensor, k: int = 5) -> torch.Tensor:
+    """
+    Computes the average distance to the k-nearest neighbors.
+
+    Args:
+        dists: [B, N, N] Distance matrix
+        k: Number of neighbors to consider
+
+    Returns:
+        [B, N, 1] Isolation score (higher = more isolated)
+    """
+    # We want the k smallest distances.
+    # We set k=k+1 because the closest 'neighbor' is the node itself (dist=0),
+    # which we want to ignore.
+    # largest=False gives us the smallest values.
+    values, _ = torch.topk(dists, k=k + 1, dim=-1, largest=False)
+
+    # values shape is [B, N, k+1]
+    # We slice [:, :, 1:] to drop the first column (distance to self, which is 0)
+    knn_dists = values[:, :, 1:]
+
+    # Calculate average distance to these k neighbors
+    # Shape becomes [B, N, 1] to match your feature dimensions
+    score = knn_dists.mean(dim=-1, keepdim=True)
+
+    return score
+
+
+def calculate_detour_features(
+    solution: torch.Tensor,
+    distance_matrix: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Computes the detour cost for each node in the current solution.
+    Detour = (d_prev_curr + d_curr_next) - d_prev_next
+
+    Args:
+        solution: [B, L, 1] containing node indices (LongTensor)
+        distance_matrix: [B, N, N] containing pairwise distances
+
+    Returns:
+        detour_features: [B, N, 1] containing the cost saving for removing each node.
+    """
+    # 1. Prepare shapes and remove last dimension if present
+    # Shape: [B, L, 1] -> [B, L]
+    sol = solution.squeeze(-1).long()
+    B, L = sol.shape
+
+    # 2. Identify Previous and Next nodes for every position
+    # We roll the solution to align neighbors with the current node
+    # prev_sol[b, i] is the node visited BEFORE sol[b, i]
+    # next_sol[b, i] is the node visited AFTER sol[b, i]
+    prev_sol = torch.roll(sol, shifts=1, dims=1)
+    next_sol = torch.roll(sol, shifts=-1, dims=1)
+
+    # 3. Gather Distances using Advanced Indexing
+    # We create a batch index tensor to select from the correct batch in the matrix
+    # shape: [B, L]
+    batch_idx = torch.arange(B, device=distance_matrix.device).unsqueeze(1).expand(B, L)
+
+    # d_pi: Distance (Prev -> Curr)
+    d_pi = distance_matrix[batch_idx, prev_sol, sol]
+
+    # d_in: Distance (Curr -> Next)
+    d_in = distance_matrix[batch_idx, sol, next_sol]
+
+    # d_pn: Distance (Prev -> Next) - The "Shortcut"
+    d_pn = distance_matrix[batch_idx, prev_sol, next_sol]
+
+    # 4. Calculate Detour Cost for every position in the sequence
+    # Shape: [B, L]
+    detour_values = d_pi + d_in - d_pn
+
+    # 5 Return with correct shape [B, N, 1]
+    return detour_values.unsqueeze(-1)
+
+
 def is_feasible(
     solution: torch.Tensor, demands: torch.Tensor, capacity: torch.Tensor
 ) -> torch.Tensor:
@@ -234,7 +412,7 @@ def is_feasible(
 
     route_loads = torch.zeros(
         batch_size,
-        num_routes,
+        int(num_routes),
         device=device,
         dtype=demands.dtype,
     )
@@ -287,7 +465,7 @@ def is_feasible2(
     max_routes = route_ids.max().item() + 1 if route_ids.numel() > 0 else 0
     max_routes = max(max_routes, solution.size(1))  # ensure enough space
     route_demands = torch.zeros(
-        batch_size, max_routes, dtype=torch.int64, device=device
+        batch_size, int(max_routes), dtype=torch.int64, device=device
     )
 
     route_demands.scatter_add_(1, torch.clamp(route_ids, min=0), demands * mask)
@@ -348,7 +526,7 @@ def capacity_utilization(
     max_routes = route_ids.max().item() + 1 if route_ids.numel() > 0 else 0
     max_routes = max(max_routes, 1)  # ensure at least one route
     route_demands = torch.zeros(
-        batch_size, max_routes, dtype=torch.float, device=device
+        batch_size, int(max_routes), dtype=torch.float, device=device
     )
 
     route_demands.scatter_add_(
@@ -372,9 +550,9 @@ def find_indices(x, c1, c2):
     Vectorized version for better efficiency.
     """
     # Ensure dimensions are compatible
-    assert (
-        x.shape[0] == c1.shape[0] == c2.shape[0]
-    ), "The first dimension must be the same"
+    assert x.shape[0] == c1.shape[0] == c2.shape[0], (
+        "The first dimension must be the same"
+    )
 
     # Reshape tensors
     x_flat = x.squeeze(-1).long()  # [batch, pb_size]

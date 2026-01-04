@@ -1,10 +1,13 @@
 from typing import Dict, Optional
+
 import torch
+from tqdm import tqdm
+
 from model import SAModel
 from problem import Problem
 from utils import extend_to
+
 from .scheduler import Scheduler
-from tqdm import tqdm
 
 # ================================
 # HELPER FUNCTIONS
@@ -93,13 +96,10 @@ def sa_test(
 
     # 3. Main Loop
     with torch.inference_mode():
-
         for step in tqdm(
             range(config["OUTER_STEPS"]), desc=desc_tqdm, colour="green", leave=False
         ):
-
             for inner_step in range(config["INNER_STEPS"]):
-
                 # A. Generate Action
                 with torch.amp.autocast(device.type):
                     if baseline:
@@ -108,7 +108,9 @@ def sa_test(
                         )
                     else:
                         action, _, _ = actor.sample(
-                            current_state, greedy=greedy, problem=problem, train=False
+                            current_state,
+                            greedy=greedy,
+                            problem=problem,
                         )
 
                 # B. Proposed Update

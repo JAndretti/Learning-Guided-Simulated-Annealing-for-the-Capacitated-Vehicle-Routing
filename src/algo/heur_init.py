@@ -1,9 +1,9 @@
-import torch
 import collections
-from tqdm import tqdm
 import multiprocessing as mp
-
 import os
+
+import torch
+from tqdm import tqdm
 
 # Padding multiplier for route tensors (60% extra space for depot visits)
 MULT = 0.6
@@ -478,7 +478,7 @@ def vrp_optimal_split(coordinates, demands, max_loads, client_order):
 
 
 def construct_cvrp_solution(
-    x: torch.Tensor, demands: torch.Tensor, capacity: int = 30
+    x: torch.Tensor, demands: torch.Tensor, capacity: torch.Tensor
 ) -> torch.Tensor:
     """
     Constructs a valid CVRP solution from node sequence while respecting

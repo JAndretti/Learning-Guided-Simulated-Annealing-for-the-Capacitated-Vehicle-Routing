@@ -1,43 +1,18 @@
 from typing import Tuple
+
 import torch
 from torch import nn
 from torch.optim import Optimizer
-from loguru import logger
 from tqdm import tqdm
 
 from model import SAModel
+from utils import setup_device, setup_logging
+
 from .replay import ReplayBuffer, Transition
 
-# Remove default logger
-logger.remove()
-# Add custom logger with colored output
-logger.add(
-    lambda msg: print(msg, end=""),
-    format=(
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-        "<blue>{file}:{line}</blue> | "
-        "<red>WARNING</red> | "
-        "<red>{message}</red>"
-    ),
-    colorize=True,
-    level="WARNING",
-)
-logger.add(
-    lambda msg: print(msg, end=""),
-    format=(
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "  # Timestamp in green
-        "<blue>{file}:{line}</blue> | "  # File and line in blue
-        "<yellow>{message}</yellow>"  # Message in yellow
-    ),
-    colorize=True,
-    level="INFO",
-)
+logger = setup_logging()
 
-DEVICE = (
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps" if torch.backends.mps.is_available() else "cpu"
-)
+DEVICE = setup_device("cuda")
 logger.info(f"PPO epochs will use device: {DEVICE}")
 
 
@@ -104,8 +79,17 @@ def run_ppo_training_epochs(
     indices = torch.randperm(total_samples)
 
     # Store the "old" values that will not change during epochs
-    with torch.no_grad():
-        old_state_values = critic(state)
+    if cfg["use_batches"]:
+        all_values = []
+        for i in range(0, len(state), batch_size):
+            batch = state[i : i + batch_size]
+            with torch.no_grad():
+                v_batch = critic(batch)
+            all_values.append(v_batch)
+        old_state_values = torch.cat(all_values)
+    else:
+        with torch.no_grad():
+            old_state_values = critic(state)
 
     for epoch in tqdm(
         range(ppo_epochs),
@@ -286,6 +270,12 @@ def ppo(
     end_device = cfg["DEVICE"]  # Computation device (CPU/GPU)
     device = DEVICE
 
+    # If Problem dimension is to big (e.g. >100) the use batch for the critic
+    # Can depend of the machin
+    cfg["use_batches"] = False
+    if cfg["PROBLEM_DIM"] > 100:
+        cfg["use_batches"] = True
+
     # Set networks to training mode
     actor.to(device)
     critic.to(device)
@@ -334,10 +324,27 @@ def ppo(
         flat_state = state.view(nt * n_problems, problem_dim, -1)
         flat_next_state = next_state.view(nt * n_problems, problem_dim, -1)
 
-        state_values = critic(flat_state).view(nt, n_problems)  # Size [nt, n_problems]
-        next_state_values = critic(flat_next_state).view(
-            nt, n_problems
-        )  # Size [nt, n_problems]
+        if cfg["use_batches"]:
+            batch_size = cfg["BATCH_SIZE"]
+
+            # --- Process state_values ---
+            state_chunks = []
+            for i in range(0, flat_state.size(0), batch_size):
+                chunk = flat_state[i : i + batch_size]
+                state_chunks.append(critic(chunk))
+            state_values = torch.cat(state_chunks, dim=0).view(nt, n_problems)
+
+            # --- Process next_state_values ---
+            next_state_chunks = []
+            for i in range(0, flat_next_state.size(0), batch_size):
+                chunk = flat_next_state[i : i + batch_size]
+                next_state_chunks.append(critic(chunk))
+            next_state_values = torch.cat(next_state_chunks, dim=0).view(nt, n_problems)
+
+        else:
+            # Standard full-pass processing
+            state_values = critic(flat_state).view(nt, n_problems)
+            next_state_values = critic(flat_next_state).view(nt, n_problems)
 
         # === 2. Vectorized Computation of Advantages (GAE) and Returns ===
         advantages = torch.zeros_like(rewards)

@@ -15,65 +15,29 @@ Main components:
 # --------------------------------
 # Import required libraries
 # --------------------------------
-import os
 import random
-from typing import Dict, Tuple, Optional, Any
+import warnings
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
-from loguru import logger
-from tqdm import tqdm
 from torch.optim.lr_scheduler import ExponentialLR
+from tqdm import tqdm
 
-# --------------------------------
-# Import custom modules
-# --------------------------------
-from setup import _HP, get_script_arguments, WandbLogger
-from model import CVRPActor, CVRPActorPairs, CVRPCritic
-from ppo import ppo, ReplayBuffer
+from algo import P_generate_instances, stack_res
+from init import init_problem, initialize_models, initialize_test_problem, test_model
+from model import SAModel
+from ppo import ReplayBuffer, ppo
 from problem import CVRP
 from sa import sa_train
-from algo import P_generate_instances, stack_res
+from setup import _HP, WandbLogger, get_script_arguments
+from utils import setup_device, setup_logging, setup_reproducibility
 
-# --------------------------------
-# Profiling tools (optional)
-# --------------------------------
-ENABLE_PROFILER = False
-if ENABLE_PROFILER:
-    import cProfile
-    import io
-    import pstats
+# Logging setup
+logger = setup_logging()
 
-# --------------------------------
-# Configure logger formatting
-# --------------------------------
-logger.remove()  # Remove default logger
-logger.add(
-    lambda msg: print(msg, end=""),
-    format=(
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-        "<blue>{file}:{line}</blue> | "
-        "<red>WARNING</red> | "
-        "<red>{message}</red>"
-    ),
-    colorize=True,
-    level="WARNING",
-)
-logger.add(
-    lambda msg: print(msg, end=""),
-    format=(
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "  # Timestamp in green
-        "<blue>{file}:{line}</blue> | "  # File and line in blue
-        "<yellow>{message}</yellow>"  # Message in yellow
-    ),
-    colorize=True,
-    level="INFO",
-)
-
-import warnings
 
 warnings.filterwarnings("ignore", message="Attempting to run cuBLAS")
-
 # --------------------------------
 # Load and prepare configuration
 # --------------------------------
@@ -84,12 +48,12 @@ config.update(get_script_arguments(config.keys()))
 # --------------------------------
 if config["LOG"]:
     WandbLogger.init(None, 3, config)
-    logger.info(f"WandB model save directory: {WandbLogger._instance.model_dir}")
+    logger.info(f"WandB model save directory: {WandbLogger.get_model_dir()}")
 
 
 def log_training_and_test_metrics(
     actor_loss: Optional[float],
-    critic_loss: Optional[float],
+    critic_loss: float,
     avg_actor_grad: float,
     avg_critic_grad: float,
     lr_actor: float,
@@ -144,9 +108,6 @@ def log_training_and_test_metrics(
         }
         logs.update(test_logs)
 
-    if len(config["HEURISTIC"]) > 1:
-        logs["ratio_heuristic"] = test_results["ratio"]
-
     WandbLogger.log(logs)
 
 
@@ -170,7 +131,7 @@ def save_model(path: str, actor_model: Optional[torch.nn.Module] = None) -> None
 
 
 def train_ppo(
-    actor: torch.nn.Module,
+    actor: SAModel,
     critic: torch.nn.Module,
     actor_optimizer: torch.optim.Optimizer,
     critic_optimizer: torch.optim.Optimizer,
@@ -179,7 +140,12 @@ def train_ppo(
     initial_solutions: torch.Tensor,
     config: Dict[str, Any],
     step: int = 0,
-) -> Tuple[Dict[str, torch.Tensor], float, float, float, float]:
+) -> Tuple[
+    Dict[str, torch.Tensor],
+    Tuple[float, float, float, float],
+    float,
+    float,
+]:
     """
     Execute one training cycle of PPO algorithm.
 
@@ -255,104 +221,14 @@ def train_ppo(
         if param.grad is not None
     ]
 
-    avg_actor_grad = np.mean(actor_gradients) if actor_gradients else 0.0
-    avg_critic_grad = np.mean(critic_gradients) if critic_gradients else 0.0
+    avg_actor_grad = float(np.mean(actor_gradients) if actor_gradients else 0.0)
+    avg_critic_grad = float(np.mean(critic_gradients) if critic_gradients else 0.0)
 
     # Clean up GPU memory
     if problem.device == "cuda":
         torch.cuda.empty_cache()
 
     return sa_results, train_stats, avg_actor_grad, avg_critic_grad
-
-
-def test_model(
-    actor: torch.nn.Module,
-    problem: CVRP,
-    initial_solutions: torch.Tensor,
-    config: Dict[str, Any],
-) -> Dict[str, torch.Tensor]:
-    """
-    Test the trained model performance using Simulated Annealing.
-
-    Args:
-        actor: Trained actor network
-        problem: CVRP problem instance for testing
-        initial_solutions: Initial solution tensor
-        config: Configuration dictionary
-
-    Returns:
-        Dictionary containing test results and metrics
-    """
-    # Clear GPU cache if using CUDA
-    if problem.device == "cuda":
-        torch.cuda.empty_cache()
-
-    tmp = config["OUTER_STEPS"]
-    config["OUTER_STEPS"] = config["TEST_OUTER_STEPS"]
-    # Perform Simulated Annealing for testing
-    test_results = sa_train(
-        actor=actor,
-        problem=problem,
-        initial_solution=initial_solutions,
-        config=config,
-        replay_buffer=None,
-        baseline=False,
-        greedy=False,
-        train=False,
-    )
-
-    config["OUTER_STEPS"] = tmp
-
-    # Clean up GPU memory
-    if problem.device == "cuda":
-        torch.cuda.empty_cache()
-
-    return test_results
-
-
-def setup_device_and_logging(config: Dict[str, Any]) -> str:
-    """
-    Configure compute device and logging based on availability.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Selected device string ('cuda', 'mps', or 'cpu')
-    """
-    device = config["DEVICE"]
-
-    # CUDA device configuration
-    if "cuda" in device:
-        if not torch.cuda.is_available():
-            device = "cpu"
-            logger.warning("CUDA device not available. Falling back to CPU.")
-        else:
-            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-            torch.cuda.empty_cache()
-            torch.backends.cudnn.benchmark = True
-            logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
-
-    # Apple Metal Performance Shaders (MPS) configuration
-    elif "mps" in device and not torch.backends.mps.is_available():
-        device = "cpu"
-        logger.warning("MPS device not available. Falling back to CPU.")
-
-    logger.info(f"Using device: {device}")
-    return device
-
-
-def setup_reproducibility(seed: int) -> None:
-    """
-    Set random seeds for reproducible results across different runs.
-
-    Args:
-        seed: Random seed value
-    """
-    torch.manual_seed(seed)
-    random.seed(seed)
-    np.random.seed(seed)
-    logger.info(f"Random seeds set to: {seed}")
 
 
 def initialize_training_problem(
@@ -377,148 +253,7 @@ def initialize_training_problem(
     return problem
 
 
-def initialize_test_problem(
-    config: Dict[str, Any], device: str
-) -> Tuple[CVRP, torch.Tensor]:
-    """
-    Initialize test problem instance with pre-generated data.
-
-    Args:
-        config: Configuration dictionary
-        device: Compute device string
-
-    Returns:
-        Tuple of (test_problem_instance, initial_test_solutions)
-    """
-    # Load test problem parameters
-    test_dim = config["TEST_DIMENSION"]
-    n_test_problems = config["TEST_NB_PROBLEMS"]
-
-    if config["NAZARI"]:
-        path = f"generated_nazari_problem/gen_nazari_{test_dim}.pt"
-
-        try:
-            test_data = torch.load(path, map_location="cpu")
-            logger.info(f"Loaded Nazari test data from: {path}")
-        except FileNotFoundError:
-            logger.error(f"Nazari test data file not found: {path}")
-            raise
-        coordinates = test_data["node_coords"][:n_test_problems].to(device)
-        demands = test_data["demands"][:n_test_problems].to(device)
-        capacities = test_data["capacity"][:n_test_problems].to(device)
-
-    else:
-        problem_path = f"generated_uchoa_problem/gen_uchoa_{test_dim}.pt"
-        try:
-            test_data = torch.load(problem_path, map_location="cpu")
-            logger.info(f"Loaded test data from: {problem_path}")
-        except FileNotFoundError:
-            logger.error(f"Test data file not found: {problem_path}")
-            raise
-
-        # Randomly select test problem indices
-        indices = torch.randperm(n_test_problems, generator=torch.Generator())
-        coordinates = test_data["node_coords"][indices]
-        demands = test_data["demands"][indices]
-        capacities = test_data["capacity"][indices]
-
-    if (coordinates.shape[0] * coordinates.shape[1] > 1000 * 161) and config["PAIRS"]:
-        logger.warning(
-            "Test problem size exceeds 1000x161, which may lead to performance issues."
-        )
-
-    # Initialize test problem instance
-    test_problem = CVRP(
-        dim=test_dim,
-        n_problems=capacities.shape[0],
-        capacities=capacities,
-        device=device,
-        params=config,
-    )
-    test_problem.manual_seed(0)
-
-    # Generate and set problem parameters
-    test_problem.generate_params("test", True, coordinates, demands)
-
-    # Generate initial solutions
-    init_method = config["TEST_INIT"]
-
-    initial_test_solutions = test_problem.generate_init_state(init_method, False)
-
-    # Set heuristic method
-    test_problem.set_heuristic(config["HEURISTIC"])
-
-    # Log test problem statistics
-    initial_cost = torch.mean(test_problem.cost(initial_test_solutions))
-    logger.info(
-        f"Test problem initialized - Dimension: {test_dim}, "
-        f"Problems: {n_test_problems}, Initial cost: {initial_cost.item():.3f}"
-    )
-
-    return test_problem, initial_test_solutions
-
-
-def initialize_models(
-    config: Dict[str, Any], device: str
-) -> Tuple[torch.nn.Module, torch.nn.Module]:
-    """
-    Initialize actor and critic neural networks.
-
-    Args:
-        config: Configuration dictionary
-        device: Compute device string
-
-    Returns:
-        Tuple of (actor_model, critic_model)
-    """
-    # Determine if mixed heuristic is used
-    if isinstance(config["HEURISTIC"], str):
-        config["HEURISTIC"] = [config["HEURISTIC"]]
-    use_mixed_heuristic = len(config["HEURISTIC"]) > 1
-
-    # Initialize actor model (with or without pairs)
-    if config["MODEL"] == "pairs":
-        actor = CVRPActorPairs(
-            embed_dim=config["EMBEDDING_DIM"],
-            c=config["ENTRY"],
-            num_hidden_layers=config["NUM_H_LAYERS"],
-            device=device,
-            mixed_heuristic=use_mixed_heuristic,
-            method=config["UPDATE_METHOD"],
-        )
-    elif config["MODEL"] == "seq":
-        actor = CVRPActor(
-            embed_dim=config["EMBEDDING_DIM"],
-            c=config["ENTRY"],
-            num_hidden_layers=config["NUM_H_LAYERS"],
-            device=device,
-            mixed_heuristic=use_mixed_heuristic,
-            method=config["UPDATE_METHOD"],
-        )
-    else:
-        raise ValueError(f"Unknown model type specified: {config['MODEL']}")
-
-    actor.manual_seed(config["SEED"])
-    logger.info(f"Actor model initialized: {actor.__class__.__name__}")
-
-    # Initialize critic model
-    if config["CRITIC_MODEL"] == "ff":
-        critic = CVRPCritic(
-            embed_dim=config["EMBEDDING_DIM"],
-            c=config["ENTRY"],
-            num_hidden_layers=config["NUM_H_LAYERS"],
-            device=device,
-        )
-    else:
-        raise ValueError(
-            f"Unknown critic model type specified: {config['CRITIC_MODEL']}"
-        )
-    logger.info("Critic model initialized")
-
-    return actor, critic
-
-
-def main(config: Dict[str, Any]) -> None:
+def main(config: dict) -> None:
     """
     Main training loop for CVRP optimization using PPO and Simulated Annealing.
 
@@ -526,29 +261,54 @@ def main(config: Dict[str, Any]) -> None:
         config: Configuration dictionary containing all hyperparameters
     """
     # Setup device and reproducibility
-    device = setup_device_and_logging(config)
+    device = setup_device(config["DEVICE"])
+    if device == "cuda":
+        logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
+    else:
+        logger.info(f"Using device: {device}")
     config["DEVICE"] = device
     setup_reproducibility(config["SEED"])
+    logger.info(f"Random seeds set to: {config['SEED']}")
 
-    # Initialize training problem environment
-    training_problem = CVRP(
-        dim=config["PROBLEM_DIM"],
-        n_problems=config["N_PROBLEMS"],
-        capacities=config["MAX_LOAD"],
-        device=device,
-        params=config,
+    training_problem, input_dim = init_problem(
+        config, dim=config["PROBLEM_DIM"], n_problem=config["N_PROBLEMS"]
     )
-    training_problem.manual_seed(config["SEED"])
-    training_problem.set_heuristic(config["HEURISTIC"])
+    config["ENTRY"] = input_dim
+    logger.info(f"Input dimension set to {input_dim}")
 
     if config["REWARD_LAST"]:
         config["REWARD_LAST_SCALE"] = 0.0
 
     # Initialize test problem environment
-    test_problem, initial_test_solutions = initialize_test_problem(config, device)
+    test_problem, initial_test_solutions = initialize_test_problem(
+        config,
+        config["TEST_DIMENSION"],
+        config["TEST_NB_PROBLEMS"],
+        config["TEST_INIT"],
+        "nazari" if config["NAZARI"] else "uchoa",
+        device,
+    )
+    # Log test problem statistics
+    initial_cost = torch.mean(test_problem.cost(initial_test_solutions))
+    logger.info(
+        f"Test problem initialized - Dimension: {config['TEST_DIMENSION']}, "
+        f"Problems: {config['TEST_NB_PROBLEMS']}, Initial cost: {initial_cost.item():.2f}"
+    )
 
     # Initialize neural network models
-    actor, critic = initialize_models(config, device)
+    actor, critic = initialize_models(
+        config["MODEL"],
+        config["CRITIC_MODEL"],
+        config["EMBEDDING_DIM"],
+        config["ENTRY"],
+        config["NUM_H_LAYERS"],
+        config["UPDATE_METHOD"],
+        config["HEURISTIC"],
+        config["SEED"],
+        device=device,
+    )
+    logger.info(f"Actor model initialized: {actor.__class__.__name__}")
+    logger.info("Critic model initialized")
 
     # Initialize optimizers
     actor_optimizer = torch.optim.Adam(
@@ -664,7 +424,7 @@ def main(config: Dict[str, Any]) -> None:
                 )
 
             # Model checkpointing
-            if config["LOG"]:
+            if config["LOG"] and epoch % 10 == 0:
                 model_name = f"{config['PROJECT']}_{config['GROUP']}_actor"
                 WandbLogger.log_model(
                     save_func=save_model,
@@ -694,22 +454,4 @@ def main(config: Dict[str, Any]) -> None:
 
 
 if __name__ == "__main__":
-    if ENABLE_PROFILER:
-        # Profile the main function execution
-        profiler = cProfile.Profile()
-        profiler.enable()
-
-        main(config)
-
-        profiler.disable()
-        profiler.dump_stats("profile_results.prof")
-
-        # Display profiling summary
-        stream = io.StringIO()
-        stats = pstats.Stats(profiler, stream=stream)
-        stats.strip_dirs().sort_stats("cumtime").print_stats(20)
-        print(stream.getvalue())
-
-        logger.info("Profiled training completed successfully")
-    else:
-        main(config)
+    main(dict(config))

@@ -1,41 +1,34 @@
+import argparse
+import os
+import sys
+import time
+import warnings
+
+import glob2
 import pandas as pd
 import torch
-import os
-import warnings
-import glob2
-import sys
-import time  # Add import for time measurement
-import argparse
+from tqdm import tqdm
+
+# Adjust imports to match your project structure
+# Assuming the functions from init.py are available in 'func' or similar module
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from func import (
     get_HP_for_model,
-    set_seed,
-    load_model,
     init_problem_parameters,
-    init_pb,
+    load_model,
+    set_seed,
 )
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-from sa import sa_test
-from model import CVRPActorPairs, CVRPActor
-from tqdm import tqdm
-from loguru import logger  # Enhanced logging capabilities
+from init import inf_test_model, initialize_models, initialize_test_problem
+from problem import CVRP
+from utils import setup_logging
 
-# Remove default logger
-logger.remove()
-# Add custom logger with colored output
-logger.add(
-    lambda msg: print(msg, end=""),
-    format=(
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "  # Timestamp in green
-        "<blue>{file}:{line}</blue> | "  # File and line in blue
-        "<yellow>{message}</yellow>"  # Message in yellow
-    ),
-    colorize=True,
-)
+logger = setup_logging()
 
 # Suppress warnings if needed
 warnings.filterwarnings("ignore")
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--INIT",
@@ -53,6 +46,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--FOLDER",
+    default="Test",
     type=str,
     help="Path to the trained model",
 )
@@ -71,19 +65,20 @@ parser.add_argument(
 )
 parser.add_argument(
     "--no-baseline",
-    dest="BASELINE",  # Store the result in the BASELINE variable
-    action="store_false",  # If the argument is present, store False
-    default=True,  # Otherwise, the default value is True
+    dest="BASELINE",
+    action="store_false",
+    default=True,
     help="Disable the baseline",
 )
 parser.add_argument(
     "--greedy",
-    dest="GREEDY",  # Store the result in the GREEDY variable
-    action="store_true",  # If the argument is present, store True
-    default=False,  # Otherwise, the default value is False
+    dest="GREEDY",
+    action="store_true",
+    default=False,
     help="Enable greedy mode",
 )
 args = parser.parse_args()
+
 # Configuration
 cfg = {
     "PROBLEM_DIM": args.dim,
@@ -92,7 +87,9 @@ cfg = {
     "DEVICE": (
         "cuda"
         if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available() else "cpu"
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
     ),
     "SEED": 0,
     "LOAD_PB": True,
@@ -103,6 +100,7 @@ cfg = {
     "GREEDY": args.GREEDY,
 }
 set_seed(cfg["SEED"])
+
 # PATH and FOLDER setup
 FOLDER = args.FOLDER
 BASE_PATH = "res/" + FOLDER + "/"
@@ -112,13 +110,6 @@ PATH = "wandb/LGSA/"
 RESULTS_FILE_ALL_MODEL = BASE_PATH + (f"res_all_model_{cfg['PROBLEM_DIM']}.csv")
 RESULTS_FILE = BASE_PATH + f"res_model_{cfg['PROBLEM_DIM']}.csv"
 MODEL_NAMES = glob2.glob(os.path.join(PATH, FOLDER, "models", "*"))
-
-PATH_DATA = f"generated_{cfg['DATA']}_problem/gen_{cfg['DATA']}_{cfg['PROBLEM_DIM']}.pt"
-indices = torch.randperm(cfg["N_PROBLEMS"], generator=torch.Generator())
-bdd = torch.load(PATH_DATA, map_location="cpu")
-coords = bdd["node_coords"][indices]
-demands = bdd["demands"][indices]
-capacities = bdd["capacity"][indices]
 
 
 def initialize_results_df(columns: list):
@@ -151,24 +142,48 @@ def load_results_models():
     return df
 
 
+def flatten_dict(d, parent_key="", sep="."):
+    """Recursively flattens a nested dictionary."""
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
 def extract_differing_keys(model_names):
-    """Extract keys with differing values across HP.yaml files."""
+    """Extract keys with differing values across HP.yaml files (handling nested dicts)."""
     all_hp_data = []
     for model_name in model_names:
         HP = get_HP_for_model(model_name)
         if HP:
-            all_hp_data.append(HP)
+            # Flatten the config so nested dicts become searchable keys
+            # e.g., {'features': {'static': True}} -> {'features.static': True}
+            all_hp_data.append(flatten_dict(HP))
 
     differing_keys = set()
     if all_hp_data:
-        keys = all_hp_data[0].keys()
+        # Get a superset of all keys across all models
+        keys = set().union(*all_hp_data)
+
         for key in keys:
-            values = {
-                tuple(hp.get(key)) if isinstance(hp.get(key), list) else hp.get(key)
-                for hp in all_hp_data
-            }
+            # Create a set of values for this key across all models
+            values = set()
+            for hp in all_hp_data:
+                val = hp.get(key)
+
+                # Handle unhashable types (lists) by converting to tuple
+                if isinstance(val, list):
+                    val = tuple(val)
+
+                values.add(val)
+
             if len(values) > 1:  # Key has differing values
                 differing_keys.add(key)
+
     return differing_keys
 
 
@@ -177,72 +192,80 @@ def add_hp_to_results(model_name, differing_keys):
     HP = get_HP_for_model(model_name)
     if not HP:
         return {key: None for key in differing_keys}
-    return {key: HP.get(key, None) for key in differing_keys}
+
+    # Flatten here as well so we can find keys like 'features.static'
+    flat_hp = flatten_dict(HP)
+
+    return {key: flat_hp.get(key, None) for key in differing_keys}
 
 
 def perform_test(
     model_name: str,
-    problem: object,
+    problem: CVRP,
     init_x: torch.Tensor,
     baseline: bool = True,
 ):
-    """Main execution function."""
+    """Main execution function using refactored init methods."""
     logger.info(f"Processing model: {model_name}")
-    # init HP
+
+    # 1. Init HP
     HP = init_problem_parameters(model_name, cfg)
     problem.set_heuristic(HP["HEURISTIC"])
+    problem.set_feature_flags(HP["features"])
+    input_dim = problem.get_input_dim()
     problem.params = HP
-    # Initialize models
-    if HP["MODEL"] == "pairs":
-        actor = CVRPActorPairs(
-            embed_dim=HP["EMBEDDING_DIM"],
-            c=HP["ENTRY"],
-            num_hidden_layers=HP["NUM_H_LAYERS"],
-            device=HP["DEVICE"],
-            mixed_heuristic=True if len(HP["HEURISTIC"]) > 1 else False,
-            method=HP["UPDATE_METHOD"],
-        )
-    elif HP["MODEL"] == "seq":
-        actor = CVRPActor(
-            embed_dim=HP["EMBEDDING_DIM"],
-            c=HP["ENTRY"],
-            num_hidden_layers=HP["NUM_H_LAYERS"],
-            device=HP["DEVICE"],
-            mixed_heuristic=True if len(HP["HEURISTIC"]) > 1 else False,
-            method=HP["UPDATE_METHOD"],
-        )
-    # Load model
+
+    # 2. Initialize Actor using helper from init.py
+    actor, _ = initialize_models(
+        model_type=HP["MODEL"],
+        critic_type="ff",  # Default assumption, irrelevant for inference
+        embedding_dim=HP["EMBEDDING_DIM"],
+        entry=input_dim,
+        num_h_layers=HP["NUM_H_LAYERS"],
+        update_method=HP["UPDATE_METHOD"],
+        heuristic=HP["HEURISTIC"],
+        seed=cfg["SEED"],
+        device=HP["DEVICE"],
+    )
+
+    # 3. Load weights
     actor = load_model(actor, model_name, "actor")
 
-    # Run simulated annealing with time measurement
+    # 4. Run Inference (LGSA Model)
     start_time = time.time()
 
-    test = sa_test(
-        actor,
-        problem,
-        init_x,
-        HP,
+    # Using inf_test_model from init.py
+    test = inf_test_model(
+        actor=actor,
+        problem=problem,
+        initial_solutions=init_x,
+        config=HP,
         baseline=False,
         greedy=HP["GREEDY"],
-        desc_tqdm="NSA Model",
     )
+
     execution_time = time.time() - start_time
     init_cost = torch.mean(problem.cost(init_x))
     final_cost = torch.mean(test["min_cost"])
+
+    # 5. Run Baseline (if enabled)
     if baseline:
         step = HP["OUTER_STEPS"]
         HP["OUTER_STEPS"] *= 20
         step_baseline = HP["OUTER_STEPS"]
+
         start_time = time.time()
-        test_baseline = sa_test(
-            actor,
-            problem,
-            init_x,
-            HP,
+
+        # Using inf_test_model for baseline
+        test_baseline = inf_test_model(
+            actor=actor,
+            problem=problem,
+            initial_solutions=init_x,
+            config=HP,
             baseline=True,
             greedy=False,
-            desc_tqdm="SA Baseline",
         )
+
         execution_time_baseline = time.time() - start_time
         HP["OUTER_STEPS"] = step
         final_cost_baseline = torch.mean(test_baseline["min_cost"])
@@ -251,9 +274,11 @@ def perform_test(
         execution_time_baseline = torch.tensor(float("nan"))
         step_baseline = torch.tensor(float("nan"))
         step = HP["OUTER_STEPS"]
+
     # Clear CUDA cache if using GPU
     if cfg["DEVICE"] == "cuda":
         torch.cuda.empty_cache()
+
     return (
         init_cost,
         final_cost,
@@ -266,7 +291,6 @@ def perform_test(
 
 
 if __name__ == "__main__":
-
     # Extract keys with differing values across HP.yaml files
     differing_keys = extract_differing_keys(MODEL_NAMES)
 
@@ -279,22 +303,28 @@ if __name__ == "__main__":
         "final_cost_baseline",
         "execution_time",
         "execution_time_baseline",
-        "NSA_steps",
+        "LGSA_steps",
         "SA_steps",
     ] + list(differing_keys)
+
     new_df, RESULTS_FILE = initialize_results_df(columns)
     all_models_results_df = load_results_models()
-    problem = init_pb(
-        cfg,
-        coords,
-        demands,
-        capacities,
+
+    # --- PROBLEM INITIALIZATION ---
+    problem, init_x = initialize_test_problem(
+        config=cfg,
+        test_dim=cfg["PROBLEM_DIM"],
+        n_test_problems=cfg["N_PROBLEMS"],
+        init_method=cfg["INIT"],
+        data=cfg["DATA"],
+        device=cfg["DEVICE"],
     )
-    init_x = problem.generate_init_state(cfg["INIT"], False)
+
     init_cost = torch.mean(problem.cost(init_x))
     logger.info(f"CVRP problem initialized. Initial cost: {init_cost:.4f}")
-    for model_name in tqdm(MODEL_NAMES, desc="Processing models"):
 
+    # Process Models
+    for model_name in tqdm(MODEL_NAMES, desc="Processing models"):
         (
             init_cost,
             final_cost,
@@ -307,6 +337,7 @@ if __name__ == "__main__":
 
         # Extract HP values for the current model
         hp_values = add_hp_to_results(model_name, differing_keys)
+
         # Add results to DataFrame
         new_df = pd.concat(
             [
@@ -320,7 +351,7 @@ if __name__ == "__main__":
                         "final_cost_baseline": [final_cost_baseline.item()],
                         "execution_time": [execution_time],
                         "execution_time_baseline": [execution_time_baseline],
-                        "NSA_steps": [step],
+                        "LGSA_steps": [step],
                         "SA_steps": [step_baseline],
                         **hp_values,
                     }
@@ -328,6 +359,7 @@ if __name__ == "__main__":
             ],
             ignore_index=True,
         )
+
         # Save results for all models
         all_models_results_df = pd.concat(
             [
