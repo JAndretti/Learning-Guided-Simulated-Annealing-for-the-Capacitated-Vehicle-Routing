@@ -1,41 +1,40 @@
 import os
 import sys
-from glob import glob
-import matplotlib.pyplot as plt
 import time
+from glob import glob
+
+import matplotlib
+
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
 import torch
-from rich import print
-
-
 from func import (
     init_problem_parameters,
-    set_seed,
     load_model,
     plot_cvrp_solution,
-    init_pb,
+    set_seed,
 )
+from rich import print
 
 # Add src path to PYTHONPATH
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-from problem import CVRP
-from sa import sa_train
-from model import CVRPActorPairs, CVRPActor
 from algo import test_or_tools
-from utils import plot_vehicle_routes, prepare_plot, is_feasible
+from init import init_problem
+from model import CVRPActor, CVRPActorPairs
+from sa import sa_train
+from utils import is_feasible, plot_vehicle_routes, prepare_plot
 
 # --- Configurations ---
 
-MODEL_NAME = "20251121_114610_3n73ugy5"
-MODEL_DIR = glob(
-    os.path.join("wandb", "Neural_Simulated_Annealing", "*", "models", MODEL_NAME)
-)[0]
+MODEL_NAME = "20260105_190705_zigc6pg8"
+MODEL_DIR = glob(os.path.join("wandb", "LGSA", "*", "models", MODEL_NAME))[0]
 SEED = 0
 
 cfg = {
     "PROBLEM_DIM": 100,
     "MAX_LOAD": 50,
     "N_PROBLEMS": 1,
-    "OUTER_STEPS": 1000,
+    "TEST_OUTER_STEPS": 1000,
     "DEVICE": "cpu",
     "INIT": "sweep",
     "SEED": 1,
@@ -140,37 +139,30 @@ def calculate_route_distance(route, coords):
     """Calculate the total distance of a single route"""
     total = 0
     for i in range(len(route) - 1):
-        total += torch.norm(coords[route[i]] - coords[route[i + 1]])
-    return total.item()
+        total += torch.norm(coords[route[i]] - coords[route[i + 1]]).item()
+    return total
 
 
 def main():
     set_seed(SEED)  # For reproducibility
     CFG = init_problem_parameters(MODEL_DIR, cfg)
+    CFG["TEST_OUTER_STEPS"] = cfg["TEST_OUTER_STEPS"]
     # Print the configuration dictionary
     print("Configuration parameters:")
     for key, value in CFG.items():
         print(f"  {key}: {value}")
     print()  # Add an empty line for better readability
     # Initialize problem
-    problem = CVRP(
-        CFG["PROBLEM_DIM"],
-        CFG["N_PROBLEMS"],
-        CFG["MAX_LOAD"],
-        device=CFG["DEVICE"],
-        params=CFG,
-    )
+    problem, input_dim = init_problem(CFG, cfg["PROBLEM_DIM"], cfg["N_PROBLEMS"])
+
     problem.manual_seed(SEED)
     PATH_DATA = f"generated_nazari_problem/gen_nazari_{cfg['PROBLEM_DIM']}.pt"
     bdd = torch.load(PATH_DATA, map_location="cpu")
-    coords = bdd["node_coords"][0]
-    demands = bdd["demands"][0]
-    capacities = bdd["capacity"][0]
-    problem = init_pb(
-        CFG, coords.unsqueeze(0), demands.unsqueeze(0), capacities.unsqueeze(0)
-    )
+    coords = bdd["node_coords"][0].unsqueeze(0)
+    demands = bdd["demands"][0].unsqueeze(0)
+    capacities = bdd["capacity"][0].unsqueeze(0)
+    problem.generate_params("test", True, coords, demands, capacities)
     init_x = problem.generate_init_state(CFG["INIT"])
-    problem.set_heuristic(CFG["HEURISTIC"])
 
     # Initialize actor
     if CFG["MODEL"] == "pairs":
@@ -183,7 +175,7 @@ def main():
     else:
         actor = CVRPActor(
             CFG["EMBEDDING_DIM"],
-            CFG["ENTRY"],
+            input_dim,
             num_hidden_layers=CFG["NUM_H_LAYERS"],
             device=CFG["DEVICE"],
             mixed_heuristic=True if CFG["HEURISTIC"] == "mix" else False,
@@ -214,7 +206,7 @@ def main():
         a.float().mean().item() if hasattr(a, "float") else float(a)
         for a in result["acceptance"]
     ]
-    invalid_moves = CFG["OUTER_STEPS"] - result["is_valid"].sum().item()
+    invalid_moves = cfg["TEST_OUTER_STEPS"] - result["is_valid"].sum().item()
 
     del result
 
@@ -225,11 +217,11 @@ def main():
     valid = is_feasible(
         result_2opt, problem.get_demands(result_2opt), problem.capacity
     ).item()
-    print((f"Solution found is feasible: " f"{valid}"))
+    print((f"Solution found is feasible: {valid}"))
 
     start_time = time.time()
     init_x = problem.generate_init_state(CFG["INIT"])
-    CFG["OUTER_STEPS"] = int(10 * CFG["OUTER_STEPS"])
+    CFG["TEST_OUTER_STEPS"] = int(10 * CFG["TEST_OUTER_STEPS"])
     result_baseline = sa_train(
         actor, problem, init_x, CFG, baseline=True, record_state=True
     )
@@ -241,7 +233,7 @@ def main():
     )
     costs_baseline = [c.item() for c in result_baseline["costs"]]
     invalid_moves_baseline = (
-        CFG["OUTER_STEPS"] - result_baseline["is_valid"].sum().item()
+        CFG["TEST_OUTER_STEPS"] - result_baseline["is_valid"].sum().item()
     )
     del result_baseline
     # Calculate and print execution time
@@ -253,7 +245,7 @@ def main():
         problem.get_demands(result_baseline_2_opt),
         problem.capacity,
     ).item()
-    print(f"Solution found is feasible: " f"{valid}")
+    print(f"Solution found is feasible: {valid}")
     # Configure OR-Tools parameters
     or_tools_cfg = {
         "OR_TOOLS_TIME": int(
@@ -289,6 +281,7 @@ def main():
         if a == 1:
             count_ones += 1
         acceptance_cum.append(count_ones / (i + 1))
+    print(f"acceptance ratio: {sum(acceptance)} / {len(acceptance)} = {sum(acceptance) / len(acceptance):.4f}")
 
     # Find the first index where the minimum cost is reached
     min_cost = min(costs)
@@ -299,8 +292,8 @@ def main():
     print(f"Minimum cost after 2-opt: {min_cost_2opt:.4f}")
     print(
         f"Number of invalid moves (refused): "
-        f"{invalid_moves} / {CFG['OUTER_STEPS']}"
-        f" ({invalid_moves * 100 / CFG['OUTER_STEPS']:.2f} %)"
+        f"{invalid_moves} / {cfg['TEST_OUTER_STEPS']}"
+        f" ({invalid_moves * 100 / cfg['TEST_OUTER_STEPS']:.2f} %)"
     )
     min_cost_baseline = min(costs_baseline)
     min_idx_baseline = costs_baseline.index(min_cost_baseline)
@@ -308,8 +301,8 @@ def main():
     print(f"Minimal cost baseline after 2-opt: {min_cost_2opt_baseline:.4f}")
     print(
         f"Number of invalid moves (refused) for baseline: "
-        f"{invalid_moves_baseline} / {CFG['OUTER_STEPS']}"
-        f" ({invalid_moves_baseline * 100 / CFG['OUTER_STEPS']:.2f} %)"
+        f"{invalid_moves_baseline} / {cfg['TEST_OUTER_STEPS']}"
+        f" ({invalid_moves_baseline * 100 / cfg['TEST_OUTER_STEPS']:.2f} %)"
     )
     # Plot cost, temperature, cumulative acceptance, and ratio if mix
     fig, ax1 = plt.subplots(figsize=(30, 6))

@@ -58,6 +58,8 @@ def log_training_and_test_metrics(
     avg_critic_grad: float,
     lr_actor: float,
     beta_kl: float,
+    explained_var: float,
+    average_kl: float,
     entropy: float,
     early_stopping_counter: int,
     test_results: Optional[Dict[str, torch.Tensor]],
@@ -89,6 +91,8 @@ def log_training_and_test_metrics(
                 "Avg_critic_grad": avg_critic_grad,
                 "LR_actor": lr_actor,
                 "Beta_KL": beta_kl,
+                "Explained_Variance": explained_var,
+                "Average_KL": average_kl,
                 "Entropy": entropy,
                 "early_stopping_counter": early_stopping_counter,
             }
@@ -142,7 +146,7 @@ def train_ppo(
     step: int = 0,
 ) -> Tuple[
     Dict[str, torch.Tensor],
-    Tuple[float, float, float, float],
+    Tuple[float, float, float, float, float, float],
     float,
     float,
 ]:
@@ -181,6 +185,70 @@ def train_ppo(
     # Initialize experience replay buffer
     buffer_size = config["OUTER_STEPS"] * config["INNER_STEPS"]
     replay_buffer = ReplayBuffer(buffer_size)
+
+    # LOGIC
+    if step > config["START_STEP"] and config["CL"]:
+        # 1. Calculate Probability (Chance to run the optimization phase)
+        current_prob = min(
+            config["MAX_PROB"],
+            (step - config["START_STEP"])
+            / (config["MAX_PROB_STEP"] - config["START_STEP"]),
+        )
+
+        if random.random() < current_prob:
+            tmp = config["TEST_OUTER_STEPS"]
+
+            # 2. Calculate Intensity (How hard we optimize)
+            calculated_steps = int(step - config["START_STEP"])
+            nb_step = max(
+                config["MIN_OUTER_STEPS_CL"],
+                min(calculated_steps, config["MAX_OUTER_STEPS_CL"]),
+            )
+            config["TEST_OUTER_STEPS"] = nb_step
+
+            # Run the improvement phase (Generates optimized candidates for the WHOLE batch)
+            pre_res = sa_train(
+                actor=actor,
+                problem=problem,
+                initial_solution=initial_solutions,
+                config=config,
+                replay_buffer=None,
+                baseline=False,
+                greedy=False,
+                train=False,
+            )
+            config["TEST_OUTER_STEPS"] = tmp
+
+            # === 3. Progressive Random Replacement ===
+            # We don't replace everything. We replace a growing random subset.
+
+            # Calculate ratio: Grows linearly from 0.0 to 1.0 based on step
+            replace_progress = (step - config["START_STEP"]) / (
+                config["MAX_REPLACE_STEP"] - config["START_STEP"]
+            )
+            current_replace_ratio = min(
+                config["MAX_REPLACE_RATIO"], max(0.0, replace_progress)
+            )
+
+            # Get the new candidates
+            optimized_solutions = pre_res["best_x"].detach()
+
+            # Determine how many to swap
+            batch_size = initial_solutions.shape[0]
+            n_replace = int(batch_size * current_replace_ratio)
+
+            if n_replace > 0:
+                # Select random indices to update
+                # randperm gives us a shuffled list of indices [0, 1, ... batch_size-1]
+                indices_to_replace = torch.randperm(
+                    batch_size, device=initial_solutions.device
+                )[:n_replace]
+
+                # Update ONLY the selected indices
+                # The unselected indices keep their old (less optimized) values
+                initial_solutions[indices_to_replace] = optimized_solutions[
+                    indices_to_replace
+                ]
 
     # Collect experiences through Simulated Annealing
     sa_results = sa_train(
@@ -377,7 +445,9 @@ def main(config: dict) -> None:
                 avg_critic_grad,
             ) = training_results
 
-            actor_loss, critic_loss, avg_entropy, beta_kl = train_stats
+            actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
+                train_stats
+            )
 
             config["BETA_KL"] = beta_kl  # Update beta_kl from PPO
 
@@ -415,6 +485,8 @@ def main(config: dict) -> None:
                     lr_actor=lr_actor,
                     beta_kl=beta_kl,
                     entropy=avg_entropy,
+                    explained_var=explained_var,
+                    average_kl=average_kl,
                     early_stopping_counter=early_stopping_counter,
                     test_results=(
                         test_results if (epoch >= 10) else initial_test_results

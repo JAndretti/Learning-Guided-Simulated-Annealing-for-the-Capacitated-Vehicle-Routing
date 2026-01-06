@@ -91,16 +91,34 @@ def run_ppo_training_epochs(
         with torch.no_grad():
             old_state_values = critic(state)
 
+    y_pred = old_state_values.view(-1).detach()
+    y_true = returns.view(-1).detach()
+
+    var_y = torch.var(y_true)
+    # dependent on batch size, var_y might be 0 if only 1 sample
+    if var_y < 1e-8:
+        explained_var_val = 0.0
+    else:
+        explained_var_val = 1 - torch.var(y_true - y_pred) / var_y
+        explained_var_val = explained_var_val.item()
+
+    total_actor_loss = []
+    total_critic_loss = []
+    num_batches = 0
+    total_entropy = []
+    average_kl = []
+
     for epoch in tqdm(
         range(ppo_epochs),
         desc=f"Epoch {curr_epoch - 1} / PPO Training",
         leave=False,
         unit="epoch",
     ):
-        total_actor_loss = 0
-        total_critic_loss = 0
-        total_entropy = 0
         approx_kl_divs = []
+        a_loss = 0.0
+        c_loss = 0.0
+        entropy_epoch = 0.0
+        explained_var_epoch = 0.0
         num_batches = 0
 
         # Iterate over mini-batches
@@ -122,7 +140,9 @@ def run_ppo_training_epochs(
 
             # --- Current evaluation of actor and critic ---
             batch_state_values = critic(batch_state).squeeze()
-            batch_log_probs = actor.evaluate(batch_state, batch_action, batch_mask)
+            batch_log_probs, batch_entropy = actor.evaluate(
+                batch_state, batch_action, batch_mask
+            )
 
             # Gradients must be zeroed for each mini-batch
             actor_opt.zero_grad()
@@ -163,9 +183,7 @@ def run_ppo_training_epochs(
             actor_loss += beta_kl * kl  # KL penalty
 
             # Entropy bonus for exploration
-            entropy = -(torch.exp(batch_log_probs) * batch_log_probs).mean()
-            if torch.isnan(entropy):
-                entropy = 0  # Safety check
+            entropy = batch_entropy.mean()
 
             actor_loss -= ent_coef * entropy
 
@@ -184,17 +202,27 @@ def run_ppo_training_epochs(
 
             actor_opt.step()
             critic_opt.step()
+            # --- Metrics accumulation ---
+            a_loss += actor_loss.item()
+            c_loss += critic_loss.item()
+            entropy_epoch += entropy.item()
+            y_pred = batch_state_values.detach().flatten()
+            y_true = batch_returns.detach().flatten()
 
-            # --- Metrics tracking ---
-            total_actor_loss += actor_loss.item()
-            total_critic_loss += critic_loss.item()
-            total_entropy += (
-                entropy.item() if isinstance(entropy, torch.Tensor) else entropy
-            )
+            var_y = torch.var(y_true)
+            explained_var_epoch += (
+                1 - torch.var(y_true - y_pred) / (var_y + 1e-8)
+            ).item()
             num_batches += 1
+
+        # --- Metrics tracking ---
+        total_actor_loss.append(a_loss / num_batches)
+        total_critic_loss.append(c_loss / num_batches)
+        total_entropy.append(entropy_epoch / num_batches)
 
         # Check KL Divergence at the end of the epoch for early stopping
         avg_kl = sum(approx_kl_divs) / len(approx_kl_divs)
+        average_kl.append(avg_kl)
         if avg_kl > 1.5 * target_KL:
             beta_kl = min(beta_kl * beta_inc, BETA_MAX)
             for g in actor_opt.param_groups:
@@ -223,10 +251,12 @@ def run_ppo_training_epochs(
 
     # Return average losses and entropy
     return (
-        total_actor_loss / num_batches if num_batches > 0 else 0,
-        total_critic_loss / num_batches if num_batches > 0 else 0,
-        total_entropy / num_batches if num_batches > 0 else 0,
+        sum(total_actor_loss) / len(total_actor_loss),
+        sum(total_critic_loss) / len(total_critic_loss),
+        sum(total_entropy) / len(total_entropy),
         beta_kl,
+        explained_var_val,
+        sum(average_kl) / len(average_kl),
     )
 
 
@@ -239,7 +269,7 @@ def ppo(
     critic_opt: Optimizer,
     curr_epoch: int,
     cfg: dict,
-) -> Tuple[float, float, float, float]:
+) -> Tuple[float, float, float, float, float, float]:
     """
     Proximal Policy Optimization (PPO) implementation for CVRP.
 
@@ -256,7 +286,7 @@ def ppo(
         cfg: Configuration dictionary with hyperparameters
 
     Returns:
-        Tuple containing actor loss, critic loss, average entropy, and beta_kl
+        Tuple containing actor loss, critic loss, average entropy, beta_kl, and explained variance
     """
 
     # === Hyperparameters ===
@@ -272,7 +302,7 @@ def ppo(
 
     # If Problem dimension is to big (e.g. >100) the use batch for the critic
     # Can depend of the machin
-    cfg["use_batches"] = False
+    cfg["use_batches"] = True if cfg["CRITIC_MODEL"] == "attention" else False
     if cfg["PROBLEM_DIM"] > 100:
         cfg["use_batches"] = True
 
@@ -385,21 +415,23 @@ def ppo(
 
     # === 4. PPO Optimization Loop ===
     # Perform multiple epochs of optimization on the collected data
-    actor_loss, critic_loss, avg_entropy, beta_kl = run_ppo_training_epochs(
-        actor,
-        critic,
-        actor_opt,
-        critic_opt,
-        state,
-        mask,
-        action,
-        old_log_probs,
-        advantages,
-        returns,
-        beta_kl,
-        cfg,
-        curr_epoch,
+    actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
+        run_ppo_training_epochs(
+            actor,
+            critic,
+            actor_opt,
+            critic_opt,
+            state,
+            mask,
+            action,
+            old_log_probs,
+            advantages,
+            returns,
+            beta_kl,
+            cfg,
+            curr_epoch,
+        )
     )
     actor.to(end_device)
     critic.to(end_device)
-    return (actor_loss, critic_loss, avg_entropy, beta_kl)
+    return (actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl)

@@ -513,48 +513,125 @@ class CVRPActor(SAModel):
 
     def evaluate(
         self, state: torch.Tensor, action: torch.Tensor, mask: torch.Tensor, **kwargs
-    ) -> torch.Tensor:
-        """Evaluate log probabilities of given actions."""
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Evaluate actions to get their Log-Probabilities and the Entropy of the distribution.
+
+        Args:
+            state: Tensor of shape (batch, problem_size, features)
+            action: Tensor of shape (batch, 2) containing [City1_Index, City2_Index]
+            mask: Tensor indicating valid choices for the second city
+
+        Returns:
+            log_probs: The log-likelihood of the specific actions taken.
+            total_entropy: The entropy (uncertainty) of the entire policy distribution.
+        """
+
+        # =========================================================================
+        # PART 1: PREPARE DATA
+        # =========================================================================
         c1_state, n_problems, x = self._prepare_features_city1(state)
 
-        c1 = action[:, 0]
+        # Extract the specific actions the agent took previously
+        # We need these to calculate how "likely" those specific moves were.
+        taken_c1 = action[:, 0]
+
         if self.mixed_heuristic:
-            # When mixed_heuristic is True, action contains [c1, c2_idx, heuristic_idx]
+            # Handle special mixed heuristic action space
             c2_idx = action[:, 1]
             heuristic_idx = action[:, 2]
-            # Reconstruct the composite c2 action
-            c2 = c2_idx * 2 + heuristic_idx
+            taken_c2 = c2_idx * 2 + heuristic_idx
         else:
-            # Standard case: action contains [c1, c2]
-            c2 = action[:, 1]
+            taken_c2 = action[:, 1]
 
-        # City 1 net
-        logits = self.city1_net(c1_state)[..., 0]
+        # =========================================================================
+        # PART 2: CITY 1 (First Decision)
+        # =========================================================================
+
+        # 1. Forward Pass: Get raw scores (logits) for every possible city
+        logits_c1 = self.city1_net(c1_state)[..., 0]
+
+        # 2. Masking: Determine which cities are valid to visit
+        # We start by assuming all are valid, then filter based on the problem state
+        valid_mask_c1 = torch.ones_like(logits_c1, dtype=torch.bool)
 
         if self.method != "rm_depot":
+            # x != 0 usually implies we are not at the depot or the node is unvisited
             tmp_mask = (x != 0).squeeze(-1)
-            logits[~tmp_mask] = -float("inf")  # Mask logits where x == 0
+            # Set invalid actions to negative infinity so Softmax makes them 0.0
+            logits_c1[~tmp_mask] = -float("inf")
+            valid_mask_c1 = tmp_mask
 
-        probs = torch.softmax(logits, dim=-1)
-        log_probs_c1 = torch.log(probs.gather(1, c1.view(-1, 1)))
+        # 3. Probabilities: Convert scores to probabilities (0.0 to 1.0)
+        # We compute log_softmax for numerical stability in loss calculations
+        probs_c1 = torch.softmax(logits_c1, dim=-1)
+        log_probs_all_c1 = torch.log_softmax(logits_c1, dim=-1)
 
-        c2_state = self._prepare_features_city2(
-            c1_state, c1, n_problems
-        )  # Second city encoding
+        # 4. Entropy Calculation (Uncertainty Metric)
+        # Formula: - Sum( p * log(p) )
+        # We must use masking to avoid NaN errors (0.0 * -inf = NaN)
+        p_log_p_c1 = torch.zeros_like(probs_c1)
+        p_log_p_c1[valid_mask_c1] = (
+            probs_c1[valid_mask_c1] * log_probs_all_c1[valid_mask_c1]
+        )
+        entropy_c1 = -p_log_p_c1.sum(dim=-1)
 
-        # City 2 net
-        logits = self.city2_net(c2_state)[..., 0]
+        # 5. Retrieve Log-Prob for the SPECIFIC action taken
+        # .gather() picks the log-prob corresponding to the index in 'taken_c1'
+        chosen_log_prob_c1 = log_probs_all_c1.gather(1, taken_c1.view(-1, 1)).squeeze(
+            -1
+        )
+
+        # =========================================================================
+        # PART 3: CITY 2 (Second Decision)
+        # =========================================================================
+
+        # Prepare state for the second decision (conditioned on the first choice)
+        c2_state = self._prepare_features_city2(c1_state, taken_c1, n_problems)
+
+        # 1. Forward Pass
+        logits_c2 = self.city2_net(c2_state)[..., 0]
+
+        # 2. Masking
+        valid_mask_c2 = torch.ones_like(logits_c2, dtype=torch.bool)
+
         if self.method == "valid":
-            logits[~mask] = -float("inf")  # Mask invalid actions
+            # Use the pre-computed mask passed from outside
+            logits_c2[~mask] = -float("inf")
+            valid_mask_c2 = mask
         else:
-            arange = torch.arange(n_problems).to(logits.device)
-            logits[arange, c1] = -float("inf")
-        probs = torch.softmax(logits, dim=-1)
-        log_probs_c2 = torch.log(probs.gather(1, c2.view(-1, 1)))
+            # Simple masking: Just prevent picking the same city again (taken_c1)
+            arange = torch.arange(n_problems, device=logits_c2.device)
+            logits_c2[arange, taken_c1] = -float("inf")
+            valid_mask_c2[arange, taken_c1] = False
 
-        # Construct log-probabilities and return
-        log_probs = log_probs_c1 + log_probs_c2
-        return log_probs[..., 0]
+        # 3. Probabilities
+        probs_c2 = torch.softmax(logits_c2, dim=-1)
+        log_probs_all_c2 = torch.log_softmax(logits_c2, dim=-1)
+
+        # 4. Entropy Calculation
+        p_log_p_c2 = torch.zeros_like(probs_c2)
+        p_log_p_c2[valid_mask_c2] = (
+            probs_c2[valid_mask_c2] * log_probs_all_c2[valid_mask_c2]
+        )
+        entropy_c2 = -p_log_p_c2.sum(dim=-1)
+
+        # 5. Retrieve Log-Prob for the SPECIFIC action taken
+        chosen_log_prob_c2 = log_probs_all_c2.gather(1, taken_c2.view(-1, 1)).squeeze(
+            -1
+        )
+
+        # =========================================================================
+        # PART 4: COMBINE AND RETURN
+        # =========================================================================
+
+        # Total Log Likelihood of the path: log(P(c1)) + log(P(c2))
+        total_log_probs = chosen_log_prob_c1 + chosen_log_prob_c2
+
+        # Total Entropy of the policy: H(c1) + H(c2)
+        total_entropy = entropy_c1 + entropy_c2
+
+        return total_log_probs, total_entropy
 
     def _prepare_features_city1(
         self, state: torch.Tensor
@@ -639,5 +716,110 @@ class CVRPCritic(nn.Module):
         q_values = self.q_func(state).view(n_problems, problem_dim)
 
         q_values = q_values.mean(dim=-1)
-
         return q_values
+
+
+class CVRPCriticAttention(nn.Module):
+    """
+    Critic network for CVRP that estimates state values using Attention Pooling.
+
+    This architecture aggregates node features intelligently, allowing the
+    Critic to distinguish between different geometric configurations
+    (e.g., clustered vs. scattered cities) that mean pooling would miss.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        c: int = 13,
+        num_hidden_layers: int = 2,
+        device: str = "cpu",
+    ) -> None:
+        super().__init__()
+
+        # 1. Node Encoder (Replaces previous q_func)
+        # We process each node independently to create a rich feature vector (embedding).
+        # We explicitly define layers here to ensure output is 'embed_dim', not scalar.
+        layers = []
+        input_dim = c
+
+        # Build the MLP layers
+        for _ in range(num_hidden_layers):
+            layers.append(nn.Linear(input_dim, embed_dim))
+            layers.append(nn.ReLU())
+            input_dim = embed_dim  # Next layer takes embed_dim
+
+        # Final encoder projection (keeps dimension as embed_dim)
+        layers.append(nn.Linear(embed_dim, embed_dim))
+
+        self.node_encoder = nn.Sequential(*layers).to(device)
+
+        # 2. Attention Pooling
+        # This replaces the simple .mean()
+        self.attention_pool = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=8,  # 8 heads provides stable gradients
+            batch_first=True,
+        )
+
+        # 3. Glimpse Query
+        # A learnable vector that asks: "What is the total value of this graph?"
+        # Shape: [1, 1, embed_dim]
+        self.glimpse_query = nn.Parameter(torch.randn(1, 1, embed_dim, device=device))
+
+        # 4. Final Value Head
+        # Projects the pooled graph embedding to a single scalar Value
+        self.value_head = nn.Linear(embed_dim, 1).to(device)
+
+        # Apply initialization
+        self.apply(self.init_weights)
+
+        # Specific Orthogonal Init for the final head (Critical for PPO)
+        nn.init.orthogonal_(self.value_head.weight, gain=1.0)
+        if self.value_head.bias is not None:
+            nn.init.constant_(self.value_head.bias, 0.0)
+
+    @staticmethod
+    def init_weights(m: nn.Module) -> None:
+        """Initialize weights using Kaiming uniform initialization."""
+        if isinstance(m, nn.Linear):
+            nn.init.kaiming_uniform_(m.weight)
+            if m.bias is not None:
+                m.bias.data.fill_(0.0)  # Generally 0.0 is safer than 0.01 for deep nets
+
+    def forward(self, state: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass computing state values.
+        Args:
+            state: [Batch, Nodes, Features]
+        Returns:
+            value: [Batch] (Scalar value estimate for each problem)
+        """
+        # 1. Prepare Input
+        # state structure assumption: [Batch, Nodes, Features]
+        # We remove the first feature index as per your previous logic
+        x = state[:, :, 1:]
+
+        # 2. Encode Nodes
+        # Output: [Batch, Nodes, Embed_Dim]
+        node_embeddings = self.node_encoder(x)
+
+        # 3. Attention Pooling
+        # Expand the learnable query to match the batch size
+        # Query: [Batch, 1, Embed_Dim]
+        batch_size = x.size(0)
+        query = self.glimpse_query.expand(batch_size, -1, -1)
+
+        # Attention mechanism
+        # Output graph_embedding: [Batch, 1, Embed_Dim]
+        # We ignore attention weights (the second return value)
+        graph_embedding, _ = self.attention_pool(
+            query, node_embeddings, node_embeddings
+        )
+
+        # 4. Final Value Projection
+        # Squeeze removes the sequence dimension (1) -> [Batch, Embed_Dim]
+        value = self.value_head(graph_embedding.squeeze(1))
+
+        # Remove the last dimension to return [Batch]
+        return value.squeeze(-1)

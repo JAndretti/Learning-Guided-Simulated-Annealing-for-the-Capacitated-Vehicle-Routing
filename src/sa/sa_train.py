@@ -389,7 +389,7 @@ def sa_train(
     record_state: bool = False,
     replay_buffer=None,
     train: bool = False,
-    device: str = None,
+    device: str = '',
     desc_tqdm: str = "Simulated Annealing Progress",
 ) -> Dict[str, torch.Tensor]:
     """
@@ -399,16 +399,17 @@ def sa_train(
     a policy network to propose solution modifications while following a temperature
     cooling schedule for acceptance decisions.
     """
-    # Device setup
-    if device is None:
+
+    if device == '':
         device = initial_solution.device
 
+    step = config["OUTER_STEPS"] if train else config["TEST_OUTER_STEPS"]
     # Initialize scheduler
     scheduler = Scheduler(
         config["SCHEDULER"],
         T_max=config["INIT_TEMP"],
         T_min=config["STOP_TEMP"],
-        step_max=config["OUTER_STEPS"],
+        step_max=step,
     )
 
     # Initialize all optimization state variables
@@ -436,7 +437,6 @@ def sa_train(
     # Progress bar setup
     desc = ("Train/ " if train else "Test/ ") + desc_tqdm
 
-    step = config["OUTER_STEPS"] if train else config["TEST_OUTER_STEPS"]
     # Main optimization loop
     for step in tqdm(
         range(step),
