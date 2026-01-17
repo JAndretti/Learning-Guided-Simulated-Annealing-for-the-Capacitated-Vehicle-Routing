@@ -1,29 +1,32 @@
 """
-CVRP (Capacitated Vehicle Routing Problem) Solver using PPO and Simulated Annealing
+CVRP Solver: PPO + Simulated Annealing
+======================================
+This module implements a hybrid Reinforcement Learning approach for the
+Capacitated Vehicle Routing Problem (CVRP).
 
-This module implements a reinforcement learning approach to solve CVRP problems
-using Proximal Policy Optimization (PPO) combined with Simulated Annealing for
-solution refinement.
-
-Main components:
-- Actor-Critic neural networks for policy learning
-- PPO for policy optimization
-- Simulated Annealing for solution exploration
-- WandB integration for experiment tracking
+Key Components:
+1. Actor-Critic Policy (PPO)
+2. Simulated Annealing (SA) for refinement
+3. Curriculum Learning for progressive difficulty
 """
 
-# --------------------------------
-# Import required libraries
-# --------------------------------
+# ============================================================================
+# IMPORTS
+# ============================================================================
+
+# Standard Library
+import math
 import random
 import warnings
 from typing import Any, Dict, Optional, Tuple
 
+# Third-Party Libraries
 import numpy as np
 import torch
 from torch.optim.lr_scheduler import ExponentialLR
 from tqdm import tqdm
 
+# Local Modules
 from algo import P_generate_instances, stack_res
 from init import init_problem, initialize_models, initialize_test_problem, test_model
 from model import SAModel
@@ -33,22 +36,29 @@ from sa import sa_train
 from setup import _HP, WandbLogger, get_script_arguments
 from utils import setup_device, setup_logging, setup_reproducibility
 
-# Logging setup
+# ============================================================================
+# CONFIGURATION & SETUP
+# ============================================================================
+
+# Suppress specific library warnings
+warnings.filterwarnings("ignore", message="Attempting to run cuBLAS")
+
+# Initialize Logging
 logger = setup_logging()
 
-
-warnings.filterwarnings("ignore", message="Attempting to run cuBLAS")
-# --------------------------------
-# Load and prepare configuration
-# --------------------------------
+# Load Configuration
 config = _HP("src/HyperParameters/HP.yaml")
 config.update(get_script_arguments(config.keys()))
-# --------------------------------
-# Initialize experiment tracking
-# --------------------------------
+
+# Initialize Experiment Tracking (WandB)
 if config["LOG"]:
     WandbLogger.init(None, 3, config)
     logger.info(f"WandB model save directory: {WandbLogger.get_model_dir()}")
+
+
+# ============================================================================
+# LOGGING & UTILITIES
+# ============================================================================
 
 
 def log_training_and_test_metrics(
@@ -59,28 +69,20 @@ def log_training_and_test_metrics(
     lr_actor: float,
     beta_kl: float,
     explained_var: float,
+    rewards_mean: float,
     average_kl: float,
     entropy: float,
+    pre_step: int,
     early_stopping_counter: int,
+    a_min_cost: float,
     test_results: Optional[Dict[str, torch.Tensor]],
     epoch: int,
     config: Dict[str, Any],
 ) -> None:
-    """
-    Log training and testing metrics to WandB.
-
-    Args:
-        actor_loss: Actor network loss value
-        critic_loss: Critic network loss value
-        avg_actor_grad: Average gradient magnitude for actor
-        avg_critic_grad: Average gradient magnitude for critic
-        test_results: Dictionary containing test metrics
-        epoch: Current training epoch
-        config: Configuration dictionary
-    """
+    """Logs training and testing metrics to WandB."""
     logs = {}
 
-    # Log training metrics if available
+    # 1. Training Metrics
     if actor_loss is not None:
         logs.update(
             {
@@ -95,43 +97,105 @@ def log_training_and_test_metrics(
                 "Average_KL": average_kl,
                 "Entropy": entropy,
                 "early_stopping_counter": early_stopping_counter,
+                "Pre_step": pre_step,
+                "Rewards_mean": rewards_mean,
             }
         )
 
-    # Log test metrics every 10 epochs
+    # 2. Test Metrics (Periodic)
     if epoch % 10 == 0 and test_results is not None:
-        test_logs = {
-            "Min_cost": torch.mean(test_results["min_cost"]),
-            "Gain": torch.mean(test_results["init_cost"] - test_results["min_cost"]),
-            "Acceptance_rate": torch.mean(test_results["n_acc"])
-            / config["TEST_OUTER_STEPS"],
-            "Step_best_cost": torch.mean(test_results["best_step"])
-            / config["TEST_OUTER_STEPS"],
-            "Valid_percentage": torch.mean(test_results["is_valid"]),
-            "Final_capacity_left": torch.mean(test_results["capacity_left"]),
-        }
-        logs.update(test_logs)
+        logs.update(
+            {
+                "Min_cost": torch.mean(test_results["min_cost"]),
+                "A_min_cost": a_min_cost,
+                "Gain": torch.mean(
+                    test_results["init_cost"] - test_results["min_cost"]
+                ),
+                "Test_Rewards_mean": test_results["average_sum_rewards"].item(),
+                "Acceptance_rate": torch.mean(test_results["n_acc"])
+                / config["TEST_OUTER_STEPS"],
+                "Step_best_cost": torch.mean(test_results["best_step"])
+                / config["TEST_OUTER_STEPS"],
+                "Valid_percentage": torch.mean(test_results["is_valid"]),
+                "Final_capacity_left": torch.mean(test_results["capacity_left"]),
+            }
+        )
 
     WandbLogger.log(logs)
 
 
 def save_model(path: str, actor_model: Optional[torch.nn.Module] = None) -> None:
-    """
-    Save actor model state dictionary to specified path.
-
-    Args:
-        path: Destination file path for model checkpoint
-        actor_model: PyTorch model to be saved
-
-    Raises:
-        ValueError: If no model is provided for saving
-    """
-    if actor_model is not None:
-        torch.save(actor_model.state_dict(), path)
-        if config["VERBOSE"]:
-            logger.info(f"Model saved to: {path}")
-    else:
+    """Saves the actor model state dictionary."""
+    if actor_model is None:
         raise ValueError("No model provided for saving")
+
+    torch.save(actor_model.state_dict(), path)
+    if config["VERBOSE"]:
+        logger.info(f"Model saved to: {path}")
+
+
+def calculate_curriculum_steps(step: int, config: Dict[str, Any]) -> int:
+    """
+    Calculates the number of deterministic improvement steps (T_init)
+    based on a Sigmoid schedule.
+    """
+    xi_cl = config["MAX_OUTER_STEPS_CL"]  # Max curriculum steps
+    E = config["MAX_PROB_STEP"]  # Total curriculum epochs
+
+    # Scale kappa based on total steps to maintain curve shape relative to paper
+    # Paper used kappa=0.2 for 200 epochs
+    kappa_base = 0.2
+    epochs_paper = 100
+    kappa = kappa_base * (epochs_paper / max(1, E))
+
+    def sigmoid_schedule(x, total_steps, k):
+        exponent = -k * (x - total_steps / 2.0)
+        exponent = max(-20.0, min(20.0, exponent))  # Clamp for stability
+        return 1.0 / (1.0 + math.exp(exponent))
+
+    s_0 = sigmoid_schedule(0, E, kappa)
+    s_E = sigmoid_schedule(E, E, kappa)
+    s_e = sigmoid_schedule(step, E, kappa)
+
+    # Calculate progress ratio
+    progress_ratio = (s_e - s_0) / (s_E - s_0) if E > 0 else 1.0
+
+    t_init = int(progress_ratio * xi_cl)
+    return max(0, min(t_init, xi_cl))
+
+
+def initialize_training_problem(
+    problem: CVRP, device: str, config: Dict[str, Any]
+) -> CVRP:
+    """Regenerates the problem instance for the next training epoch."""
+    if config["DATA"] == "uchoa":
+        # Load structured instances
+        coords_list, demands_list, capacity_list, _ = P_generate_instances(
+            config["N_PROBLEMS"], random.randint(0, 1000000), config["PROBLEM_DIM"]
+        )
+        coords, demands, capacity = stack_res(coords_list, demands_list, capacity_list)
+        problem.generate_params(coords, demands.to(torch.int64), capacity)
+
+    elif config["DATA"] == "random":
+        # Generate fully random instances
+        coords = torch.rand(
+            config["N_PROBLEMS"], config["PROBLEM_DIM"] + 1, 2, device=device
+        )
+        demands = torch.randint(
+            1, 10, (config["N_PROBLEMS"], config["PROBLEM_DIM"] + 1), device=device
+        )
+        demands[:, 0] = 0  # Depot has no demand
+        capacity = torch.full(
+            (config["N_PROBLEMS"], 1), config["MAX_LOAD"], device=device
+        )
+        problem.generate_params(coords, demands, capacity)
+
+    return problem
+
+
+# ============================================================================
+# CORE TRAINING LOGIC
+# ============================================================================
 
 
 def train_ppo(
@@ -139,74 +203,67 @@ def train_ppo(
     critic: torch.nn.Module,
     actor_optimizer: torch.optim.Optimizer,
     critic_optimizer: torch.optim.Optimizer,
-    critic_scheduler: torch.optim.lr_scheduler.ExponentialLR,  # Update scheduler type
+    critic_scheduler: ExponentialLR,
     problem: CVRP,
-    initial_solutions: torch.Tensor,
     config: Dict[str, Any],
     step: int = 0,
-) -> Tuple[
-    Dict[str, torch.Tensor],
-    Tuple[float, float, float, float, float, float],
-    float,
-    float,
-]:
+) -> Tuple[Dict, Tuple, float, float, int]:
     """
-    Execute one training cycle of PPO algorithm.
-
-    Process:
-    1. Collect experiences using Simulated Annealing
-    2. Optimize policy using PPO
-    3. Compute gradient statistics for monitoring
-
-    Args:
-        actor: Actor neural network
-        critic: Critic neural network
-        actor_optimizer: Optimizer for actor network
-        critic_optimizer: Optimizer for critic network
-        critic_scheduler: Learning rate scheduler for critic
-        problem: CVRP problem instance
-        initial_solutions: Initial solution tensor
-        config: Configuration dictionary
-        step: Current training step
-
-    Returns:
-        Tuple containing:
-        - SA training results dictionary
-        - Actor loss value
-        - Critic loss value
-        - Average actor gradient magnitude
-        - Average critic gradient magnitude
+    Executes a single training epoch (SA collection + PPO update).
     """
-    # Clear GPU cache if using CUDA
     if problem.device == "cuda":
-        torch.cuda.init()
         torch.cuda.empty_cache()
 
-    # Initialize experience replay buffer
-    buffer_size = config["OUTER_STEPS"] * config["INNER_STEPS"]
+    # -------------------------------------------------------
+    # 1. Dynamic Initialization (Curriculum)
+    # -------------------------------------------------------
+
+    # Default to empty or specific list
+    current_init_list = config.get("INIT_LIST", [])
+
+    if config["MULTI_INIT"]:
+        total_methods = len(current_init_list)
+        target_step = config.get("MULTI_INIT_STEP", 0)
+
+        if target_step > 0:
+            # Calculate progress from 0.0 to 1.0
+            # We cap progress at 1.0 so we don't go out of bounds after step 300
+            progress = min(1.0, step / target_step)
+
+            # Map progress to the number of methods [1 to total_methods]
+            # Logic: Always use at least 1. Linearly add others.
+            # Step 0   -> 1 method
+            # Step 150 -> Half of methods
+            # Step 300 -> All methods
+            num_active = 1 + int(progress * (total_methods - 1))
+
+            # Slice the list to get currently active methods
+            current_init_list = current_init_list[:num_active]
+
+        # (Optional) Log just to see it working
+        # print(f"Step {step}: Using {len(current_init_list)} methods: {current_init_list}")
+
+    # Generate initial solutions with the dynamic list
+    initial_solutions = problem.generate_init_state(
+        init_heuristic=config["INIT"],
+        multi_init=config["MULTI_INIT"],
+        init_list=current_init_list,  # Pass the dynamic list here
+    )
+    buffer_size = config["OUTER_STEPS"]
     replay_buffer = ReplayBuffer(buffer_size)
+    pre_step = 0
 
-    # LOGIC
-    if step > config["START_STEP"] and config["CL"]:
-        # 1. Calculate Probability (Chance to run the optimization phase)
-        current_prob = min(
-            config["MAX_PROB"],
-            (step - config["START_STEP"])
-            / (config["MAX_PROB_STEP"] - config["START_STEP"]),
-        )
+    # 2. Curriculum Learning (Improvement Phase)
 
-        if random.random() < current_prob:
-            tmp = config["TEST_OUTER_STEPS"]
+    if config["CL"]:
+        t_init = calculate_curriculum_steps(step, config)
 
-            # 2. Calculate Intensity (How hard we optimize)
-            calculated_steps = int(step - config["START_STEP"])
-            nb_step = max(
-                config["MIN_OUTER_STEPS_CL"],
-                min(calculated_steps, config["MAX_OUTER_STEPS_CL"]),
-            )
-            config["TEST_OUTER_STEPS"] = nb_step
+        if t_init > 0:
+            original_steps = config.get("TEST_OUTER_STEPS", 0)
+            config["TEST_OUTER_STEPS"] = t_init
+            pre_step = t_init
 
-            # Run the improvement phase (Generates optimized candidates for the WHOLE batch)
+            # Run deterministic improvement
             pre_res = sa_train(
                 actor=actor,
                 problem=problem,
@@ -217,52 +274,27 @@ def train_ppo(
                 greedy=False,
                 train=False,
             )
-            config["TEST_OUTER_STEPS"] = tmp
 
-            # === 3. Progressive Random Replacement ===
-            # We don't replace everything. We replace a growing random subset.
+            # Use improved solutions as start point for training
+            config["TEST_OUTER_STEPS"] = original_steps
+            initial_solutions = pre_res["best_x"].detach()
+            problem.init_parameters(initial_solutions)
+            del pre_res
 
-            # Calculate ratio: Grows linearly from 0.0 to 1.0 based on step
-            replace_progress = (step - config["START_STEP"]) / (
-                config["MAX_REPLACE_STEP"] - config["START_STEP"]
-            )
-            current_replace_ratio = min(
-                config["MAX_REPLACE_RATIO"], max(0.0, replace_progress)
-            )
-
-            # Get the new candidates
-            optimized_solutions = pre_res["best_x"].detach()
-
-            # Determine how many to swap
-            batch_size = initial_solutions.shape[0]
-            n_replace = int(batch_size * current_replace_ratio)
-
-            if n_replace > 0:
-                # Select random indices to update
-                # randperm gives us a shuffled list of indices [0, 1, ... batch_size-1]
-                indices_to_replace = torch.randperm(
-                    batch_size, device=initial_solutions.device
-                )[:n_replace]
-
-                # Update ONLY the selected indices
-                # The unselected indices keep their old (less optimized) values
-                initial_solutions[indices_to_replace] = optimized_solutions[
-                    indices_to_replace
-                ]
-
-    # Collect experiences through Simulated Annealing
+    # 3. Experience Collection (Simulated Annealing)
     sa_results = sa_train(
         actor=actor,
         problem=problem,
         initial_solution=initial_solutions,
         config=config,
         replay_buffer=replay_buffer,
+        epoch=step,
         baseline=False,
         greedy=False,
         train=True,
     )
 
-    # Optimize policy using PPO
+    # 4. Policy Optimization (PPO)
     train_stats = ppo(
         actor=actor,
         critic=critic,
@@ -274,80 +306,52 @@ def train_ppo(
         cfg=config,
     )
 
-    # Step the learning rate scheduler for the critic
+    # 5. Scheduling & Monitoring
     critic_scheduler.step()
 
-    # Compute gradient statistics for monitoring
-    actor_gradients = [
-        param.grad.abs().mean().item()
-        for param in actor.parameters()
-        if param.grad is not None
-    ]
-    critic_gradients = [
-        param.grad.abs().mean().item()
-        for param in critic.parameters()
-        if param.grad is not None
-    ]
+    def get_avg_grad(model):
+        grads = [
+            p.grad.abs().mean().item() for p in model.parameters() if p.grad is not None
+        ]
+        return float(np.mean(grads)) if grads else 0.0
 
-    avg_actor_grad = float(np.mean(actor_gradients) if actor_gradients else 0.0)
-    avg_critic_grad = float(np.mean(critic_gradients) if critic_gradients else 0.0)
+    avg_actor_grad = get_avg_grad(actor)
+    avg_critic_grad = get_avg_grad(critic)
 
-    # Clean up GPU memory
     if problem.device == "cuda":
         torch.cuda.empty_cache()
 
-    return sa_results, train_stats, avg_actor_grad, avg_critic_grad
+    return sa_results, train_stats, avg_actor_grad, avg_critic_grad, pre_step
 
 
-def initialize_training_problem(
-    problem: CVRP, device: str, config: Dict[str, Any]
-) -> CVRP:
-    if config["DATA"] == "uchoa":
-        # Load test problem parameters
-        test_dim = config["PROBLEM_DIM"]
-        n_test_problems = config["N_PROBLEMS"]
-        base_seed = random.randint(0, 1000000)
-        coords_list, demands_list, capacity_list, _ = P_generate_instances(
-            n_test_problems, base_seed, test_dim
-        )
-        # Stack the results into tensors
-        coords, demands, capacity = stack_res(coords_list, demands_list, capacity_list)
-        # Generate and set problem parameters
-        problem.generate_params("train", True, coords, demands.to(torch.int64))
-        problem.capacity = capacity.to(device)
-    elif config["DATA"] == "random":
-        # Generate new training problem instances
-        problem.generate_params()
-    return problem
+# ============================================================================
+# MAIN EXECUTION LOOP
+# ============================================================================
 
 
 def main(config: dict) -> None:
-    """
-    Main training loop for CVRP optimization using PPO and Simulated Annealing.
+    """Main Orchestrator for CVRP Training."""
 
-    Args:
-        config: Configuration dictionary containing all hyperparameters
-    """
-    # Setup device and reproducibility
+    # --- 1. Environment Setup ---
     device = setup_device(config["DEVICE"])
-    if device == "cuda":
-        logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
-    else:
-        logger.info(f"Using device: {device}")
     config["DEVICE"] = device
+    logger.info(
+        f"Device: {device} | CUDA: {torch.cuda.get_device_name(0) if device == 'cuda' else 'N/A'}"
+    )
+
     setup_reproducibility(config["SEED"])
-    logger.info(f"Random seeds set to: {config['SEED']}")
+    logger.info(f"Random Seed: {config['SEED']}")
 
     training_problem, input_dim = init_problem(
         config, dim=config["PROBLEM_DIM"], n_problem=config["N_PROBLEMS"]
     )
     config["ENTRY"] = input_dim
-    logger.info(f"Input dimension set to {input_dim}")
+    logger.info(f"Problem Input Dimension: {input_dim}")
 
     if config["REWARD_LAST"]:
         config["REWARD_LAST_SCALE"] = 0.0
 
-    # Initialize test problem environment
+    # --- 2. Test Environment Setup ---
     test_problem, initial_test_solutions = initialize_test_problem(
         config,
         config["TEST_DIMENSION"],
@@ -356,14 +360,10 @@ def main(config: dict) -> None:
         "nazari" if config["NAZARI"] else "uchoa",
         device,
     )
-    # Log test problem statistics
-    initial_cost = torch.mean(test_problem.cost(initial_test_solutions))
-    logger.info(
-        f"Test problem initialized - Dimension: {config['TEST_DIMENSION']}, "
-        f"Problems: {config['TEST_NB_PROBLEMS']}, Initial cost: {initial_cost.item():.2f}"
-    )
+    init_test_cost = torch.mean(test_problem.cost(initial_test_solutions))
+    logger.info(f"Test Env Initialized | Cost: {init_test_cost.item():.2f}")
 
-    # Initialize neural network models
+    # --- 3. Model & Optimizer Setup ---
     actor, critic = initialize_models(
         config["MODEL"],
         config["CRITIC_MODEL"],
@@ -375,154 +375,123 @@ def main(config: dict) -> None:
         config["SEED"],
         device=device,
     )
-    logger.info(f"Actor model initialized: {actor.__class__.__name__}")
-    logger.info("Critic model initialized")
+    logger.info("Models Initialized")
 
-    # Initialize optimizers
     actor_optimizer = torch.optim.Adam(
         actor.parameters(), lr=config["LR_ACTOR"], weight_decay=config["WEIGHT_DECAY"]
     )
     critic_optimizer = torch.optim.Adam(
         critic.parameters(), lr=config["LR_CRITIC"], weight_decay=config["WEIGHT_DECAY"]
     )
+    critic_scheduler = ExponentialLR(critic_optimizer, gamma=0.985)
 
-    # Initialize learning rate scheduler for the critic
-    critic_scheduler = ExponentialLR(critic_optimizer, gamma=0.98)  # Smooth decay
-
-    logger.info("Training initialization completed")
-
-    # Perform initial test to establish baseline
+    # --- 4. Baseline & Pre-checks ---
     initial_test_results = test_model(
         actor, test_problem, initial_test_solutions, config
     )
     current_test_loss = torch.mean(initial_test_results["min_cost"])
-    logger.info(
-        f"Initial test completed with {config['TEST_INIT']}, "
-        f"with loss: {current_test_loss:.4f}"
-    )
+    logger.info(f"Baseline Test Loss: {current_test_loss:.4f}")
 
-    # Early stopping variables
+    # --- 5. Training Loop ---
     early_stopping_counter = 0
     best_loss_value = float("inf")
+    logger.info("Starting Training Phase")
 
-    logger.info("Starting training")
-
-    # Clear GPU memory before training
     if training_problem.device == "cuda":
         torch.cuda.empty_cache()
 
-    # Main training loop
-    with tqdm(range(config["N_EPOCHS"]), unit="epoch", colour="blue") as progress_bar:
-        for epoch in progress_bar:
-            # Generate new training problem instances
-            training_problem = initialize_training_problem(
-                training_problem, device, config
-            )
+    progress_bar = tqdm(range(config["N_EPOCHS"]), unit="epoch", colour="blue")
 
-            # Generate initial solutions for training
-            initial_training_solutions = training_problem.generate_init_state(
-                config["INIT"], config["MULTI_INIT"]
-            )
+    a_min_cost = current_test_loss.item()
 
-            # Execute training step
-            training_results = train_ppo(
-                actor=actor,
-                critic=critic,
-                actor_optimizer=actor_optimizer,
-                critic_optimizer=critic_optimizer,
-                critic_scheduler=critic_scheduler,  # Pass scheduler
-                problem=training_problem,
-                initial_solutions=initial_training_solutions,
+    for epoch in progress_bar:
+        # A. Prepare Data
+        training_problem = initialize_training_problem(training_problem, device, config)
+
+        # B. Run Training Step
+        sa_results, train_stats, avg_actor_grad, avg_critic_grad, pre_step = train_ppo(
+            actor=actor,
+            critic=critic,
+            actor_optimizer=actor_optimizer,
+            critic_optimizer=critic_optimizer,
+            critic_scheduler=critic_scheduler,
+            problem=training_problem,
+            config=config,
+            step=epoch + 1,
+        )
+
+        # C. Extract Stats
+        actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
+            train_stats
+        )
+        config["BETA_KL"] = beta_kl
+
+        # D. Periodic Evaluation
+        test_results = None
+        if epoch % 10 == 0 and epoch != 0:
+            test_results = test_model(
+                actor, test_problem, initial_test_solutions, config
+            )
+            current_test_loss = torch.mean(test_results["min_cost"])
+            if current_test_loss.item() < a_min_cost:
+                a_min_cost = current_test_loss.item()
+
+            if config["REWARD_LAST"]:
+                config["REWARD_LAST_SCALE"] = min(
+                    config["REWARD_LAST_SCALE"] + config["REWARD_LAST_ADD"], 100
+                )
+
+        # E. Early Stopping Check
+        if epoch % 10 == 0:
+            if current_test_loss.item() >= best_loss_value:
+                early_stopping_counter += 1
+            else:
+                early_stopping_counter = 0
+                best_loss_value = min(current_test_loss.item(), best_loss_value)
+
+        # F. Logging
+        if config["LOG"]:
+            log_training_and_test_metrics(
+                actor_loss=actor_loss,
+                critic_loss=critic_loss,
+                avg_actor_grad=avg_actor_grad,
+                avg_critic_grad=avg_critic_grad,
+                lr_actor=actor_optimizer.param_groups[0]["lr"],
+                beta_kl=beta_kl,
+                explained_var=explained_var,
+                rewards_mean=sa_results["average_sum_rewards"].item(),
+                average_kl=average_kl,
+                entropy=avg_entropy,
+                pre_step=pre_step,
+                early_stopping_counter=early_stopping_counter,
+                a_min_cost=a_min_cost,
+                test_results=test_results if (epoch >= 10) else initial_test_results,
+                epoch=epoch,
                 config=config,
-                step=epoch + 1,
             )
 
-            # Unpack training results
-            (
-                sa_results,
-                train_stats,
-                avg_actor_grad,
-                avg_critic_grad,
-            ) = training_results
-
-            actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
-                train_stats
-            )
-
-            config["BETA_KL"] = beta_kl  # Update beta_kl from PPO
-
-            # Periodic testing and evaluation
-            test_results = None
-            if epoch % 10 == 0 and epoch != 0:
-                test_results = test_model(
-                    actor, test_problem, initial_test_solutions, config
-                )
-                current_test_loss = torch.mean(test_results["min_cost"])
-
-                if config["REWARD_LAST"]:
-                    config["REWARD_LAST_SCALE"] = min(
-                        config["REWARD_LAST_SCALE"] + config["REWARD_LAST_ADD"], 100
-                    )
-
-            # Early stopping logic
+            # Save Checkpoint
             if epoch % 10 == 0:
-                if current_test_loss.item() >= best_loss_value:
-                    early_stopping_counter += 1
-                    if config["VERBOSE"]:
-                        logger.info(f"Early stopping counter: {early_stopping_counter}")
-                else:
-                    early_stopping_counter = 0
-                    best_loss_value = min(current_test_loss.item(), best_loss_value)
-
-            # Log metrics to WandB
-            if config["LOG"]:
-                lr_actor = actor_optimizer.param_groups[0]["lr"]
-                log_training_and_test_metrics(
-                    actor_loss=actor_loss,
-                    critic_loss=critic_loss,
-                    avg_actor_grad=avg_actor_grad,
-                    avg_critic_grad=avg_critic_grad,
-                    lr_actor=lr_actor,
-                    beta_kl=beta_kl,
-                    entropy=avg_entropy,
-                    explained_var=explained_var,
-                    average_kl=average_kl,
-                    early_stopping_counter=early_stopping_counter,
-                    test_results=(
-                        test_results if (epoch >= 10) else initial_test_results
-                    ),
-                    epoch=epoch,
-                    config=config,
-                )
-
-            # Model checkpointing
-            if config["LOG"] and epoch % 10 == 0:
-                model_name = f"{config['PROJECT']}_{config['GROUP']}_actor"
                 WandbLogger.log_model(
                     save_func=save_model,
                     model=actor,
                     val_loss=current_test_loss.item(),
                     epoch=epoch,
-                    model_name=model_name,
+                    model_name=f"{config['PROJECT']}_{config['GROUP']}_actor",
                 )
 
-            # Trigger early stopping if no improvement for too long
-            if early_stopping_counter > 10:
-                logger.warning(
-                    f"Early stopping triggered at epoch {epoch} "
-                    f"with loss {best_loss_value:.4f}"
-                )
-                break
+        # G. Loop termination
+        if early_stopping_counter > 10 and (
+            not config["CL"] or epoch >= config["MAX_PROB_STEP"]
+        ):
+            logger.warning(f"Early stopping triggered at epoch {epoch}")
+            break
 
-            # Update progress bar
-            progress_bar.set_description(
-                (
-                    f"Test loss: {current_test_loss:.4f}, "
-                    f"EarlyStop Counter: {early_stopping_counter}"
-                )
-            )
+        progress_bar.set_description(
+            f"Test Loss: {current_test_loss:.4f} | EarlyStop: {early_stopping_counter}"
+        )
 
-    logger.info("Training completed successfully")
+    logger.info("Training Completed Successfully.")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from func import (
     set_seed,
 )
 
-from init import inf_test_model, initialize_models, initialize_test_problem
+from init import test_model, initialize_models, initialize_test_problem
 from problem import CVRP
 from utils import setup_logging
 
@@ -46,7 +46,6 @@ parser.add_argument(
 )
 parser.add_argument(
     "--FOLDER",
-    default="Test",
     type=str,
     help="Path to the trained model",
 )
@@ -235,7 +234,8 @@ def perform_test(
     start_time = time.time()
 
     # Using inf_test_model from init.py
-    test = inf_test_model(
+    HP["TEST_OUTER_STEPS"] = HP["OUTER_STEPS"]
+    test = test_model(
         actor=actor,
         problem=problem,
         initial_solutions=init_x,
@@ -246,7 +246,7 @@ def perform_test(
 
     execution_time = time.time() - start_time
     init_cost = torch.mean(problem.cost(init_x))
-    final_cost = torch.mean(test["min_cost"])
+    final_cost = torch.mean(torch.tensor(test["min_cost"]))
 
     # 5. Run Baseline (if enabled)
     if baseline:
@@ -257,7 +257,7 @@ def perform_test(
         start_time = time.time()
 
         # Using inf_test_model for baseline
-        test_baseline = inf_test_model(
+        test_baseline = test_model(
             actor=actor,
             problem=problem,
             initial_solutions=init_x,
@@ -268,7 +268,7 @@ def perform_test(
 
         execution_time_baseline = time.time() - start_time
         HP["OUTER_STEPS"] = step
-        final_cost_baseline = torch.mean(test_baseline["min_cost"])
+        final_cost_baseline = torch.mean(torch.tensor(test_baseline["min_cost"]))
     else:
         final_cost_baseline = torch.tensor(float("nan"))
         execution_time_baseline = torch.tensor(float("nan"))
@@ -324,7 +324,7 @@ if __name__ == "__main__":
     logger.info(f"CVRP problem initialized. Initial cost: {init_cost:.4f}")
 
     # Process Models
-    for model_name in tqdm(MODEL_NAMES, desc="Processing models"):
+    for model_name in tqdm(MODEL_NAMES, desc="Processing models", leave=False):
         (
             init_cost,
             final_cost,

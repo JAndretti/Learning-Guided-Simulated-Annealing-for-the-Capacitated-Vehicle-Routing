@@ -37,7 +37,7 @@ class SAModel(nn.Module):
         self.generator.manual_seed(seed)
 
     def get_logits(
-        self, state: torch.Tensor, action: torch.Tensor
+        self, state: torch.Tensor, action: torch.Tensor, **kwargs
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 

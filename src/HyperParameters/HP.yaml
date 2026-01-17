@@ -1,8 +1,8 @@
 # =============== Project & Logging ===============
 PROJECT: "LGSA" # Project name
-GROUP: "ALL_features3" # Experimentation group
-COOMMENT: ""
-LOG: False # Enable or disable logging with WandB
+GROUP: "MULTI_INIT_CL" # Experimentation group
+COMMENT: ""
+LOG: True # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
@@ -21,6 +21,7 @@ HEURISTIC: "insertion" # Local search method (insertion, swap, two_opt)
 UPDATE_METHOD: "valid" # Update method after heuristic
 INIT: "random" # Initial solution method
 MULTI_INIT: True # Use multiple initial solutions
+MULTI_INIT_STEP: 0 # Step where all initial solutions are used
 INIT_LIST: ["isolate", "random", "sweep", "nearest_neighbor"] # List of initial solution methods
 
 # =============== Reward ===============
@@ -29,12 +30,15 @@ REWARD: "immediate" # Reward calculation method
 REWARD_LAST: False
 REWARD_LAST_ADD: 0.001
 REWARD_VALID: False # penalize invalid solutions in reward
-NORMALIZE_REWARD: True # Normalize reward to have mean 0 and std 1
+NORMALIZE_REWARD: False # Normalize reward to have mean 0 and std 1
+WARMUP_EPOCHS: 0 # Number of epochs using immediate weight warmup
+REWARD_SCALE: 1 # Scale factor for reward signal
 
 # =============== Features ===============
 features:
   static: True          # coords, angles, depot info
   topology: True        # prev/next neighbors
+  # gap_ref: True        # gap to reference solution
   detour: True          # detour
   centroid: True        # route centroid
   route_cost: True     # cost of the current route
@@ -45,22 +49,21 @@ features:
 
 # =============== Model Architecture ===============
 MODEL: "seq" # Model type: pairs, seq
-CRITIC_MODEL: "ff" # Critic model type: ff
+CRITIC_MODEL: "attention" # Critic model type: ff, attention
 EMBEDDING_DIM: 32 # Embedding dimension
 NUM_H_LAYERS: 1 # Number of layers in the model
 
 # =============== Training ===============
-N_EPOCHS: 10000 # Total number of training epochs
+N_EPOCHS: 1000 # Total number of training epochs
 LR_ACTOR: 0.001 # Learning rate
 LR_CRITIC: 0.001 # Learning rate
 WEIGHT_DECAY: 0.001 # L2 regularization
-BATCH_SIZE: 2048 # Training batch size
+BATCH_SIZE: 2048  # Training batch size 
 
 # =============== Simulated Annealing ===============
 INIT_TEMP: 1 # Initial temperature
 STOP_TEMP: 0.1 # Final temperature (to low tend to bad learning bcs rejection)
 OUTER_STEPS: 100 # Number of temperature steps
-INNER_STEPS: 1 # Number of steps per temperature%
 SCHEDULER: "lam" # Cooling schedule type
 METROPOLIS: True # Use Metropolis criterion
 
@@ -75,6 +78,11 @@ ENT_COEF: 0.01 # Entropy coefficient
 TARGET_KL: 0.03 # Target KL divergence
 BETA_KL: 1.0 # KL penalty coefficient
 GP_LAMBDA: 0.01 # Gradient penalty weight
+
+# =============== Curriculum ===============
+CL : False # Enable curriculum learning
+MAX_PROB_STEP: 600 # Step to calcul the curriculum step 
+MAX_OUTER_STEPS_CL: 100 # Max outer steps for curriculum learning (pre steps)
 
 # =============== Testing during training ===============
 TEST_DIMENSION: 100 # Test dimension (50 or 100)

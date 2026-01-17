@@ -32,26 +32,47 @@ HYPERPARAMETERS_PATH = "src/HyperParameters/HP_sweep.yaml"
 
 def read_YAML_hyperparameters_sweep(hp_path):
     """
-    Read all hyperparampeters used for the sweep from a YAML file
-
-    Inputs
-        - hp_path (str) : Path to the YAML file
-        containing the hyperparameter sweep values
-
-    Outputs
-        - hyperparameter_list  (List): list of possible
-        combinations of hyperparameters values
-        - hyperparameter_names (List): list of possible
-        combinations of hyperparameters names
+    Read hyperparameters from a YAML file.
+    Supports both a single dict (standard grid) and a list of dicts (conditional grids).
     """
-
     with open(hp_path, "r") as f:
-        hyperparameters = yaml.safe_load(f)
+        data = yaml.safe_load(f)
 
-    hyperparameter_names = list(hyperparameters.keys())
-    hyperparameter_list = list(product(*hyperparameters.values()))
+    # Normalize input: always treat it as a list of grids
+    if isinstance(data, dict):
+        grids = [data]
+    else:
+        grids = data
 
-    return hyperparameter_names, hyperparameter_list
+    all_configs = []
+    keys = []
+
+    for i, grid in enumerate(grids):
+        # 1. Ensure keys are sorted so values align correctly across different groups
+        current_keys = sorted(grid.keys())
+
+        # 2. Validation: All groups must have the same parameter names
+        if i == 0:
+            keys = current_keys
+        elif current_keys != keys:
+            raise ValueError(
+                f"Grid #{i} has different parameters than the first grid. All groups must match."
+            )
+
+        # 3. Ensure every value is a list (even single items)
+        values_list = []
+        for k in keys:
+            val = grid[k]
+            # Convert single items to list if user forgot brackets
+            if not isinstance(val, list):
+                val = [val]
+            values_list.append(val)
+
+        # 4. Generate combinations for this specific group
+        group_configs = list(product(*values_list))
+        all_configs.extend(group_configs)
+
+    return keys, all_configs
 
 
 def run_training_script(gpu_id, hyperparameter_names, hyperparameter_values):
@@ -69,7 +90,7 @@ def run_training_script(gpu_id, hyperparameter_names, hyperparameter_values):
     cmd_str = f"CUDA_VISIBLE_DEVICES={gpu_id} python3 {TRAINING_SCRIPT_PATH}"
 
     for hp_name, hp_val in zip(hyperparameter_names, hyperparameter_values):
-        cmd_str += f" --{hp_name} \"{hp_val}\""  # cmd_str += f" --{hp_name} \"{hp_val}\""
+        cmd_str += f' --{hp_name} "{hp_val}"'  # cmd_str += f" --{hp_name} \"{hp_val}\""
 
     subprocess.run(cmd_str, shell=True)
 

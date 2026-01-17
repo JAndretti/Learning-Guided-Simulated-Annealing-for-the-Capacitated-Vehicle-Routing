@@ -62,6 +62,8 @@ def test_model(
     if problem.device == "cuda":
         torch.cuda.empty_cache()
 
+    problem.init_parameters(initial_solutions)
+
     # Perform Simulated Annealing for testing
     test_results = sa_train(
         actor=actor,
@@ -88,7 +90,7 @@ def inf_test_model(
     config: Dict,
     baseline: bool = False,
     greedy: bool = False,
-) -> Dict[str, torch.Tensor]:
+) -> Dict[str, torch.Tensor | List[Any]]:
     """
     Test the trained model performance using Simulated Annealing with fast inference (less metrics etc..).
 
@@ -104,6 +106,12 @@ def inf_test_model(
         Dictionary containing test results and metrics
     """
 
+    # Clear GPU cache if using CUDA
+    if problem.device == "cuda":
+        torch.cuda.empty_cache()
+
+    problem.init_parameters(initial_solutions)
+
     # Perform Simulated Annealing for testing
     test_results = sa_test(
         actor=actor,
@@ -113,6 +121,10 @@ def inf_test_model(
         baseline=baseline,
         greedy=greedy,
     )
+
+    # Clear GPU cache if using CUDA
+    if problem.device == "cuda":
+        torch.cuda.empty_cache()
 
     return test_results
 
@@ -171,7 +183,7 @@ def initialize_test_problem(
     test_problem, _ = init_problem(config, dim=test_dim, n_problem=n_test_problems)
 
     # Generate and set problem parameters
-    test_problem.generate_params("test", True, coordinates, demands, capacities)
+    test_problem.generate_params(coordinates, demands, capacities)
 
     initial_test_solutions = test_problem.generate_init_state(init_method, False)
 

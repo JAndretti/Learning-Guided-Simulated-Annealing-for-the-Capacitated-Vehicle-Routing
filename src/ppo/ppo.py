@@ -79,17 +79,13 @@ def run_ppo_training_epochs(
     indices = torch.randperm(total_samples)
 
     # Store the "old" values that will not change during epochs
-    if cfg["use_batches"]:
-        all_values = []
-        for i in range(0, len(state), batch_size):
-            batch = state[i : i + batch_size]
-            with torch.no_grad():
-                v_batch = critic(batch)
-            all_values.append(v_batch)
-        old_state_values = torch.cat(all_values)
-    else:
+    all_values = []
+    for i in range(0, len(state), batch_size):
+        batch = state[i : i + batch_size]
         with torch.no_grad():
-            old_state_values = critic(state)
+            v_batch = critic(batch)
+        all_values.append(v_batch)
+    old_state_values = torch.cat(all_values)
 
     y_pred = old_state_values.view(-1).detach()
     y_true = returns.view(-1).detach()
@@ -260,6 +256,168 @@ def run_ppo_training_epochs(
     )
 
 
+def run_ppo_training_epochs_standard(
+    actor,
+    critic,
+    actor_opt,
+    critic_opt,
+    state,
+    mask,
+    action,
+    old_log_probs,
+    advantages,
+    returns,
+    beta_kl,
+    cfg,
+    curr_epoch,
+):
+    """
+    Standard PPO training loop without Adaptive KL or Gradient Penalty.
+    Relies purely on PPO Clipping for stability.
+    """
+    # === Retrieve Hyperparameters ===
+    ppo_epochs = cfg["PPO_EPOCHS"]
+    batch_size = cfg["BATCH_SIZE"]
+    eps_clip = cfg["EPS_CLIP"]
+    ent_coef = cfg["ENT_COEF"]
+
+    # === Preparation for PPO Epochs ===
+    total_samples = state.size(0)
+    indices = torch.randperm(total_samples)
+
+    # Store "old" values for clipping
+    all_values = []
+    for i in range(0, len(state), batch_size):
+        batch = state[i : i + batch_size]
+        with torch.no_grad():
+            v_batch = critic(batch)
+        all_values.append(v_batch)
+    old_state_values = torch.cat(all_values)
+
+    # Metrics for reporting
+    total_actor_loss = []
+    total_critic_loss = []
+    total_entropy = []
+    average_kl = []
+
+    # Calculate initial explained variance for logging
+    y_pred = old_state_values.view(-1).detach()
+    y_true = returns.view(-1).detach()
+    var_y = torch.var(y_true)
+    explained_var_val = (
+        0.0 if var_y < 1e-8 else (1 - torch.var(y_true - y_pred) / var_y).item()
+    )
+
+    for epoch in tqdm(
+        range(ppo_epochs),
+        desc=f"Epoch {curr_epoch - 1} / PPO Standard",
+        leave=False,
+        unit="epoch",
+    ):
+        epoch_actor_loss = 0.0
+        epoch_critic_loss = 0.0
+        epoch_entropy = 0.0
+        num_batches = 0
+        epoch_kls = []
+
+        # Iterate over mini-batches
+        for start in range(0, total_samples, batch_size):
+            end = start + batch_size
+            minibatch_indices = indices[start:end]
+
+            if len(minibatch_indices) <= 1:
+                continue
+
+            # --- Retrieve mini-batch data ---
+            batch_state = state[minibatch_indices]
+            batch_mask = mask[minibatch_indices]
+            batch_action = action[minibatch_indices]
+            batch_advantages = advantages[minibatch_indices]
+            batch_returns = returns[minibatch_indices]
+            batch_old_log_probs = old_log_probs[minibatch_indices].squeeze()
+            batch_old_values = old_state_values[minibatch_indices].squeeze()
+
+            # --- Current evaluation ---
+            batch_state_values = critic(batch_state).squeeze()
+            batch_log_probs, batch_entropy = actor.evaluate(
+                batch_state, batch_action, batch_mask
+            )
+
+            # Zero gradients
+            actor_opt.zero_grad()
+            critic_opt.zero_grad()
+
+            # === Critic Loss (Standard Clipped) ===
+            v_loss_unclipped = (batch_state_values - batch_returns) ** 2
+            v_clipped = batch_old_values + torch.clamp(
+                batch_state_values - batch_old_values, -eps_clip, eps_clip
+            )
+            v_loss_clipped = (v_clipped - batch_returns) ** 2
+
+            # Note: No Gradient Penalty added here
+            critic_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
+
+            # === Actor Loss (Standard PPO) ===
+            ratios = torch.exp(batch_log_probs - batch_old_log_probs.detach())
+            surr1 = ratios * batch_advantages.detach()
+            surr2 = (
+                torch.clamp(ratios, 1 - eps_clip, 1 + eps_clip)
+                * batch_advantages.detach()
+            )
+
+            # PPO Clipped Objective
+            actor_loss = -torch.min(surr1, surr2).mean()
+
+            # Entropy Bonus
+            entropy = batch_entropy.mean()
+            actor_loss -= ent_coef * entropy
+
+            # Note: No Adaptive KL Penalty added here
+
+            # --- Backprop ---
+            if torch.isnan(actor_loss) or torch.isnan(critic_loss):
+                logger.warning("NaN detected in loss. Skipping batch.")
+                continue
+
+            actor_loss.backward()
+            critic_loss.backward()
+
+            # Gradient clipping (Standard stability measure)
+            torch.nn.utils.clip_grad_norm_(actor.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(critic.parameters(), max_norm=1.0)
+
+            actor_opt.step()
+            critic_opt.step()
+
+            # --- Track Metrics ---
+            epoch_actor_loss += actor_loss.item()
+            epoch_critic_loss += critic_loss.item()
+            epoch_entropy += entropy.item()
+            num_batches += 1
+
+            # Monitor KL just for information (not for control)
+            with torch.no_grad():
+                delta_log = batch_old_log_probs - batch_log_probs
+                kl = (delta_log.exp() * delta_log).mean()
+                epoch_kls.append(kl.item())
+
+        # Store epoch averages
+        if num_batches > 0:
+            total_actor_loss.append(epoch_actor_loss / num_batches)
+            total_critic_loss.append(epoch_critic_loss / num_batches)
+            total_entropy.append(epoch_entropy / num_batches)
+            average_kl.append(sum(epoch_kls) / len(epoch_kls))
+
+    return (
+        sum(total_actor_loss) / len(total_actor_loss),
+        sum(total_critic_loss) / len(total_critic_loss),
+        sum(total_entropy) / len(total_entropy),
+        0.0,  # beta_kl is now irrelevant/zero
+        explained_var_val,
+        sum(average_kl) / len(average_kl),
+    )
+
+
 def ppo(
     actor: SAModel,
     critic: nn.Module,
@@ -299,12 +457,6 @@ def ppo(
     beta_kl = cfg["BETA_KL"]  # Initial KL penalty coefficient
     end_device = cfg["DEVICE"]  # Computation device (CPU/GPU)
     device = DEVICE
-
-    # If Problem dimension is to big (e.g. >100) the use batch for the critic
-    # Can depend of the machin
-    cfg["use_batches"] = True if cfg["CRITIC_MODEL"] == "attention" else False
-    if cfg["PROBLEM_DIM"] > 100:
-        cfg["use_batches"] = True
 
     # Set networks to training mode
     actor.to(device)
@@ -354,27 +506,21 @@ def ppo(
         flat_state = state.view(nt * n_problems, problem_dim, -1)
         flat_next_state = next_state.view(nt * n_problems, problem_dim, -1)
 
-        if cfg["use_batches"]:
-            batch_size = cfg["BATCH_SIZE"]
+        batch_size = cfg["BATCH_SIZE"]
 
-            # --- Process state_values ---
-            state_chunks = []
-            for i in range(0, flat_state.size(0), batch_size):
-                chunk = flat_state[i : i + batch_size]
-                state_chunks.append(critic(chunk))
-            state_values = torch.cat(state_chunks, dim=0).view(nt, n_problems)
+        # --- Process state_values ---
+        state_chunks = []
+        for i in range(0, flat_state.size(0), batch_size):
+            chunk = flat_state[i : i + batch_size]
+            state_chunks.append(critic(chunk))
+        state_values = torch.cat(state_chunks, dim=0).view(nt, n_problems)
 
-            # --- Process next_state_values ---
-            next_state_chunks = []
-            for i in range(0, flat_next_state.size(0), batch_size):
-                chunk = flat_next_state[i : i + batch_size]
-                next_state_chunks.append(critic(chunk))
-            next_state_values = torch.cat(next_state_chunks, dim=0).view(nt, n_problems)
-
-        else:
-            # Standard full-pass processing
-            state_values = critic(flat_state).view(nt, n_problems)
-            next_state_values = critic(flat_next_state).view(nt, n_problems)
+        # --- Process next_state_values ---
+        next_state_chunks = []
+        for i in range(0, flat_next_state.size(0), batch_size):
+            chunk = flat_next_state[i : i + batch_size]
+            next_state_chunks.append(critic(chunk))
+        next_state_values = torch.cat(next_state_chunks, dim=0).view(nt, n_problems)
 
         # === 2. Vectorized Computation of Advantages (GAE) and Returns ===
         advantages = torch.zeros_like(rewards)

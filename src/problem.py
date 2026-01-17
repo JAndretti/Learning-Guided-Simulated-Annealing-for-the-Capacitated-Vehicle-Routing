@@ -1,17 +1,14 @@
-# --------------------------------
-# Import required libraries
-# --------------------------------
-from abc import ABC, abstractmethod  # Abstract base classes for problem definition
-from typing import (
-    Dict,
-    Optional,
-    Tuple,
-    Union,
-)  # Type hints for better code readability
+# ============================================================================
+# PROBLEM DEFINITION: CAPACITATED VEHICLE ROUTING PROBLEM (CVRP)
+# ============================================================================
 
-import torch  # PyTorch for tensor operations
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional, Tuple
+
+import torch
 import torch.nn.functional as F
 
+# Local Imports
 from algo import (
     cheapest_insertion,
     construct_cvrp_solution,
@@ -35,7 +32,8 @@ from utils import (
     repeat_to,
 )
 
-init_methods = {
+# Registry of initialization methods
+INIT_METHODS = {
     "random": random_init_batch,
     "sweep": generate_sweep_solution,
     "isolate": generate_isolate_solution,
@@ -47,142 +45,83 @@ init_methods = {
 }
 
 
+# ============================================================================
+# ABSTRACT BASE CLASS
+# ============================================================================
+
+
 class Problem(ABC):
     """
-    Abstract base class defining the interface for optimization problems.
-
-    This class provides the foundation for implementing various optimization problems
-    by defining common operations and required abstract methods.
+    Abstract Interface for Optimization Problems.
+    Defines the contract for state generation, cost calculation, and updates.
     """
 
     def __init__(self, device: str = "cpu") -> None:
-        """
-        Initialize the problem.
-
-        Args:
-            device: Computation device (cpu/cuda)
-        """
         self.device = device
         self.generator = torch.Generator(device=device)
 
     def manual_seed(self, seed: int) -> None:
-        """
-        Set random generator seed for reproducibility.
-
-        Args:
-            seed: Random seed value
-        """
+        """Sets the random seed for reproducibility."""
         self.generator = torch.Generator(device=self.device)
         self.generator.manual_seed(seed)
 
     @abstractmethod
     def cost(self, solution: torch.Tensor) -> torch.Tensor:
-        """
-        Calculate cost of a solution.
-
-        Args:
-            solution: Solution tensor
-
-        Returns:
-            Cost tensor
-        """
+        """Calculate the scalar cost of a solution."""
         pass
 
     @abstractmethod
     def update(
         self, solution: torch.Tensor, action: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Apply an action to modify a solution.
-
-        Args:
-            s: Current solution tensor
-            a: Action tensor
-
-        Returns:
-            Updated solution tensor
-        """
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Apply an action to the solution and return (new_solution, is_valid)."""
         pass
 
     @abstractmethod
-    def set_params(self, params) -> None:
-        """
-        Set problem parameters.
-
-        Args:
-            **kwargs: Problem-specific parameters
-        """
+    def set_params(self, params: Dict) -> None:
+        """Set specific instance parameters (coords, demands, etc.)."""
         pass
 
     @abstractmethod
-    def generate_params(self) -> None:
-        """
-        Generate problem parameters.
-
-        Returns:
-            Dictionary of problem parameters
-        """
+    def generate_params(
+        self, coords: torch.Tensor, demands: torch.Tensor, capacities: torch.Tensor
+    ) -> None:
+        """Generate a new batch of problem instances."""
         pass
 
     @property
     def state_encoding(self) -> torch.Tensor:
-        """
-        Get problem's state encoding.
-
-        Returns:
-            Tensor representation of the problem state
-        """
+        """Returns the static encoding of the problem (e.g., coordinates)."""
         return torch.Tensor()
 
     @abstractmethod
     def generate_init_state(self) -> torch.Tensor:
-        """
-        Generate initial state for the problem.
-
-        Returns:
-            Initial state tensor
-        """
+        """Generates the initial solution/state."""
         pass
 
     def to_state(self, *components: torch.Tensor) -> torch.Tensor:
-        """
-        Concatenate multiple state components into a single state tensor.
-
-        Args:
-            *components: Variable number of tensors representing different components
-                        of the state. Each tensor should have the same shape except
-                        for the last dimension, which will be concatenated.
-
-        Returns:
-            A single tensor resulting from concatenating all input components
-            along the last dimension.
-        """
+        """Concatenates feature tensors into a single state tensor."""
         return torch.cat(components, dim=-1)
 
     def from_state(self, state: torch.Tensor) -> Tuple[torch.Tensor, ...]:
-        """
-        Split state into components dynamically.
-
-        Args:
-            state: Combined state tensor
-
-        Returns:
-            Tuple of component tensors
-        """
-        num_extra_features = state.shape[-1] - 3  # Adjusting for variable dimensions
+        """Splits the state tensor back into its components."""
+        num_extra_features = state.shape[-1] - 3  # Adjust based on dynamic features
         split_sizes = [1, 2] + [1] * num_extra_features
         return tuple(torch.split(state, split_sizes, dim=-1))
 
 
+# ============================================================================
+# CVRP IMPLEMENTATION
+# ============================================================================
+
+
 class CVRP(Problem):
     """
-    Capacitated Vehicle Routing Problem implementation.
-
-    This class implements the CVRP, where a fleet of vehicles with limited capacity
-    must serve customer demands while minimizing total route distance.
+    Capacitated Vehicle Routing Problem (CVRP).
+    Optimization goal: Minimize total route distance subject to vehicle capacity constraints.
     """
 
-    x_dim = 1  # Dimension for solution representation
+    x_dim = 1  # Dimension of the solution (node index)
 
     def __init__(
         self,
@@ -191,92 +130,40 @@ class CVRP(Problem):
         device: str = "cpu",
         params: Optional[Dict] = None,
     ):
-        """
-        Initialize CVRP instance.
-
-        Args:
-            dim: Number of client nodes (excluding depot)
-            n_problems: Batch size for parallel processing
-            capacities: Vehicle capacity constraint(s)
-            device: Computation device (cpu/cuda)
-            params: Configuration parameters including:
-                   - HEURISTIC: 'swap' or 'two_opt', etc.
-                   - CLUSTERING: Whether to use clustered instances
-                   - NB_CLUSTERS_MAX: Max clusters if clustering enabled
-                   - UPDATE_METHOD: How to apply heuristics
-                   - INIT: Initial solution generation method
-        """
         super().__init__(device)
         self.params = params or {}
         self.n_problems = n_problems
         self.dim = dim
-
-    # --------------------------------
-    # Initialization and Configuration
-    # --------------------------------
-
-    def set_heuristic(self, heuristic: list) -> None:
-        """
-        Configure the heuristic method for solution modification.
-
-        Args:
-            heuristic: Type of heuristic ('swap', 'two_opt', 'insertion')
-
-        Raises:
-            ValueError: If unsupported heuristic specified
-        """
         self.heuristic = None
-        self.heuristic_1 = None
-        self.heuristic_2 = None
-        if isinstance(heuristic, (list, str)):
-            if isinstance(heuristic, str):
-                heuristic = [heuristic]
-            heuristics = {
-                "swap": swap,
-                "two_opt": two_opt,
-                "insertion": insertion,
-            }
-            if len(heuristic) == 1:
-                self.heuristic = heuristics.get(heuristic[0])
-                if self.heuristic is None:
-                    raise ValueError(f"Unsupported heuristic: {heuristic[0]}")
-            elif len(heuristic) == 2:
-                self.heuristic_1 = heuristics.get(heuristic[0])
-                self.heuristic_2 = heuristics.get(heuristic[1])
-                if self.heuristic_1 is None or self.heuristic_2 is None:
-                    raise ValueError(f"Unsupported heuristics: {heuristic}")
-            else:
-                raise ValueError("Only up to 2 heuristics are supported.")
+        self.feature_flags = {}
+
+    # ------------------------------------------------------------------------
+    # Configuration & Parameter Setup
+    # ------------------------------------------------------------------------
+
+    def set_heuristic(self, heuristic_name: str) -> None:
+        """Selects the local search heuristic (swap, two_opt, insertion)."""
+        heuristics_map = {
+            "swap": swap,
+            "two_opt": two_opt,
+            "insertion": insertion,
+        }
+        self.heuristic = heuristics_map.get(heuristic_name)
+        if self.heuristic is None:
+            raise ValueError(f"Unsupported heuristic: {heuristic_name}")
 
     def apply_heuristic(
         self, solution: torch.Tensor, action: torch.Tensor
     ) -> torch.Tensor:
-        """
-        Apply the selected heuristic to the given solution.
-
-        Args:
-            solution: Current solution tensor
-            action: Action tensor indicating the modification to apply
-
-        Returns:
-            Modified solution tensor
-        """
-        if self.heuristic is not None:
-            return self.heuristic(solution, action)
-        elif self.heuristic_1 is not None and self.heuristic_2 is not None:
-            idx = action[:, 2]
-            sol1 = self.heuristic_1(solution, action[:, :2].long())
-            sol2 = self.heuristic_2(solution, action[:, :2].long())
-            return torch.where(idx.unsqueeze(-1).unsqueeze(-1) == 0, sol1, sol2)
-        else:
-            raise ValueError("Heuristic not properly configured.")
+        """Applies the configured heuristic to the solution."""
+        if self.heuristic is None:
+            raise ValueError("Heuristic not configured. Call set_heuristic() first.")
+        return self.heuristic(solution, action)
 
     def set_params(self, params: Dict) -> None:
         """
-        Update problem coordinates and demands.
-
-        Args:
-            params: Dictionary containing problem parameters
+        Loads batch data (coords, demands, capacity) and pre-computes static features
+        like distance matrices, angles, and isolation scores.
         """
         if "coords" in params:
             self.coords = params["coords"].to(self.device)
@@ -284,486 +171,336 @@ class CVRP(Problem):
             self.demands = params["demands"].to(self.device)
         if "capacity" in params:
             self.capacity = params["capacity"].to(self.device)
-        self.angles = calculate_client_angles(self.coords)
-        self.matrix = calculate_distance_matrix(self.coords)
-        self.isolation_score = calculate_knn_isolation(self.matrix, k=5)
-        # Calculate distances from depot to clients and normalize row-wise to [0,1]
-        self.dist_to_depot = self.matrix[:, 0, 0:]  # Distances from depot to clients
-        # Find min and max values per batch for normalization
-        min_dist = torch.min(self.dist_to_depot, dim=1, keepdim=True)[0]
-        max_dist = torch.max(self.dist_to_depot, dim=1, keepdim=True)[0]
-        # Avoid division by zero
-        divisor = torch.clamp(max_dist - min_dist, min=1e-10)
-        # Normalize each row to [0,1] range
-        self.dist_to_depot = ((self.dist_to_depot - min_dist) / divisor).unsqueeze(-1)
-        # coords of depot
-        self.depot_coords = self.coords[:, 0, :].unsqueeze(1)  # [batch, 1, 2]
-        # q / Q demand_normalized
-        self.demand_normalized = (self.demands / self.capacity).unsqueeze(
-            -1
-        )  # [batch, num_nodes+1, 1]
+        with torch.no_grad():
+            # Pre-compute static geometric features
+            self.angles = calculate_client_angles(self.coords)
+            self.matrix = calculate_distance_matrix(self.coords)
+            self.isolation_score = calculate_knn_isolation(self.matrix, k=5)
 
-    # --------------------------------
-    # Problem Instance Generation
-    # --------------------------------
-
-    def generate_params(
-        self,
-        mode: str = "train",
-        pb: bool = False,
-        coords: torch.Tensor = torch.Tensor(),
-        demands: torch.Tensor = torch.Tensor(),
-        capacities: Union[int, torch.Tensor] = 30,
-    ) -> None:
-        """
-        Generate problem instances with optional clustering.
-
-        Args:
-            mode: 'train' or 'test' (affects random seed)
-            pb: Whether to load predefined problem
-            coords: Optional coordinates tensor
-            demands: Optional demands tensor
-
-        Returns:
-            Dictionary containing:
-            - coords: Node coordinates [batch, num_nodes+1, 2]
-            - demands: Node demands [batch, num_nodes+1] (depot demand=0)
-        """
-        if mode == "test":
-            self.manual_seed(0)  # Fixed seed for reproducibility in test mode
-
-        if isinstance(capacities, int):
-            capacities = torch.full(
-                (self.n_problems, 1),
-                capacities,
-                device=self.device,
-                dtype=torch.float32,
+            # Normalize distances from depot [0, 1]
+            self.dist_to_depot = self.matrix[:, 0, 0:]
+            min_dist = torch.min(self.dist_to_depot, dim=1, keepdim=True)[0]
+            max_dist = torch.max(self.dist_to_depot, dim=1, keepdim=True)[0]
+            divisor = torch.clamp(max_dist - min_dist, min=1e-10)
+            self.dist_to_depot = ((self.dist_to_depot - min_dist) / divisor).unsqueeze(
+                -1
             )
 
-        if pb:  # Use provided problem data
-            if coords.shape[0] != self.n_problems:
+            self.depot_coords = self.coords[:, 0, :].unsqueeze(1)
+            self.demand_normalized = (self.demands / self.capacity).unsqueeze(-1)
+            # self.ref_cost = torch.mean(self.cost(INIT_METHODS["nearest_neighbor"](self))).to(
+            #     self.device
+            # )
+
+    def generate_params(
+        self, coords: torch.Tensor, demands: torch.Tensor, capacities: torch.Tensor
+    ) -> None:
+        """Validates input shapes and sets problem parameters."""
+        for name, tensor in [
+            ("coords", coords),
+            ("demands", demands),
+            ("capacities", capacities),
+        ]:
+            if tensor.shape[0] != self.n_problems:
                 raise ValueError(
-                    f"Expected {self.n_problems} problems, got {coords.shape[0]}"
+                    f"Expected {self.n_problems} for {name}, got {tensor.shape[0]}"
                 )
-            if demands.shape[0] != self.n_problems:
-                raise ValueError(
-                    f"Expected {self.n_problems} problems, got {demands.shape[0]}"
-                )
-            params = {"coords": coords, "demands": demands, "capacity": capacities}
 
-        else:
-            params = self._generate_random_instances()
-            params["capacity"] = capacities
+        self.set_params({"coords": coords, "demands": demands, "capacity": capacities})
 
-        self.set_params(params)
-
-    def _generate_random_instances(self) -> Dict[str, torch.Tensor]:
-        """
-        Generate completely random problem instances.
-
-        Coordinates are uniformly distributed in the unit square.
-
-        Returns:
-            Dictionary with coordinates and demands
-        """
-        coords = torch.rand(
-            self.n_problems,
-            self.dim + 1,
-            2,
-            device=self.device,
-            generator=self.generator,
-        )
-        demands = self._generate_demands()
-        return {"coords": coords, "demands": demands}
-
-    def _generate_demands(self) -> torch.Tensor:
-        """
-        Generate random customer demands (depot demand=0).
-
-        Returns:
-            Tensor of demand values
-        """
-        demands = torch.randint(
-            1,
-            10,
-            (self.n_problems, self.dim + 1),
-            device=self.device,
-            generator=self.generator,
-        )
-        demands[:, 0] = 0  # Depot has no demand
-        return demands
-
-    # --------------------------------
-    # State and Solution Representation
-    # --------------------------------
-
-    def get_distance_to_centroid(self, solution: torch.Tensor) -> torch.Tensor:
-        """
-        Calculates the Euclidean distance between each node and the centroid
-        (center of gravity) of the route it belongs to.
-
-        Args:
-            solution: [batch, seq_len, 1]
-
-        Returns:
-            [batch, seq_len, 1] Distance to centroid for each node
-        """
-        # 1. Get coordinates aligned with the solution sequence [B, L, 2]
-        coords = self.get_coords(solution)
-
-        # 2. Prepare tensors for scatter operations
-        # We need to know the max segment ID to size our tensors correctly
-        num_routes = self.segment_ids.max() + 1
-        batch_size, seq_len = self.segment_ids.shape
-
-        # Initialize Sums and Counts
-        # shape: [B, num_routes, 2]
-        route_coord_sums = torch.zeros(
-            batch_size, int(num_routes), 2, device=self.device, dtype=coords.dtype
-        )
-        # shape: [B, num_routes, 1]
-        route_node_counts = torch.zeros(
-            batch_size, int(num_routes), 1, device=self.device, dtype=coords.dtype
-        )
-
-        # 3. Aggregate data per route (Scatter Add)
-        # self.segment_ids must be expanded to [B, L, 2] for coords scatter
-        segment_ids_expanded = self.segment_ids.unsqueeze(-1).expand(-1, -1, 2)
-
-        # Sum X and Y for each route
-        route_coord_sums.scatter_add_(1, segment_ids_expanded, coords)
-
-        # Count nodes in each route (summing 1s)
-        ones = torch.ones(
-            batch_size, seq_len, 1, device=self.device, dtype=coords.dtype
-        )
-        # Only count actual nodes (where segment_id > 0), ignore depot padding if necessary
-        # However, your segment_ids usually assigns 0 to depot/padding.
-        # Ideally we only care about actual routes.
-        # Using self.mask ensures we don't count padding/depot visits as "route nodes"
-        # if your segment logic treats them as separate.
-        # Assuming self.segment_ids identifies valid routes for clients:
-        route_node_counts.scatter_add_(1, self.segment_ids.unsqueeze(-1), ones)
-
-        # 4. Calculate Centroids
-        # Avoid division by zero for empty/padding routes
-        route_node_counts = torch.clamp(route_node_counts, min=1.0)
-        route_centroids = route_coord_sums / route_node_counts  # [B, num_routes, 2]
-
-        # 5. Map centroids back to node positions
-        # Gather the centroid relevant to each node in the sequence
-        # Shape becomes [B, L, 2] matching 'coords'
-        node_centroids = route_centroids.gather(1, segment_ids_expanded)
-
-        # 6. Calculate Euclidean Distance
-        dists = (coords - node_centroids).norm(p=2, dim=-1, keepdim=True)
-
-        return dists
+    # ------------------------------------------------------------------------
+    # Feature Engineering & State Construction
+    # ------------------------------------------------------------------------
 
     def set_feature_flags(self, feature_flags: Dict[str, bool]) -> None:
-        """Store feature flags and pre-calculate input dimension."""
         self.feature_flags = feature_flags
 
     def get_input_dim(self) -> int:
-        """Dynamically calculates the channel dimension 'c' based on active flags."""
-        # Base dimensions for each group (Update these numbers based on your exact tensor sizes!)
+        """Calculates input channel dimension based on active feature flags."""
         dims = {
             "static": 7,  # x, y, th, d, is_depot, knn, q/Q
             "topology": 4,  # prev_x, prev_y, next_x, next_y
-            "detour": 1,  # detour
-            "centroid": 1,  # centroid_dist
+            # "gap_ref": 1,
+            "detour": 1,
+            "centroid": 1,
             "route_status": 4,  # load/Q, slack, q/load, route_cost_norm
-            "route_cost": 1,  # cost of current route
-            "route_pct": 1,  # capacity signal of the route
-            "slack": 1,  # (1 - route_pct)
-            "node_pct": 1,  # node demand percentage with route capacity
+            "route_cost": 1,
+            "route_pct": 1,
+            "slack": 1,
+            "node_pct": 1,
             "meta": 2,  # temp, progress
         }
+        return sum(dims[k] for k, v in self.feature_flags.items() if v)
 
-        total_dim = 0
-        for group, is_active in self.feature_flags.items():
-            if is_active:
-                total_dim += dims[group]
-        return total_dim
+    def get_distance_to_centroid(self, solution: torch.Tensor) -> torch.Tensor:
+        """Computes distance of each node to its route's center of gravity."""
+        coords = self.get_coords(solution)
 
-    def build_state_components(self, x, temp, time):
-        """
-        Build state components for the model.
+        # Setup aggregation tensors
+        num_routes = int(self.segment_ids.max().item()) + 1
+        batch_size, seq_len = self.segment_ids.shape
 
-        Combines solution representation with problem features and metadata.
+        route_coord_sums = torch.zeros(
+            batch_size, num_routes, 2, device=self.device, dtype=coords.dtype
+        )
+        route_node_counts = torch.zeros(
+            batch_size, num_routes, 1, device=self.device, dtype=coords.dtype
+        )
 
-        Args:
-            x: Solution tensor
-            temp: Temperature parameter
-            time: Time step information
+        # Expand segment IDs for gathering
+        segment_ids_expanded = self.segment_ids.unsqueeze(-1).expand(-1, -1, 2)
 
-        Returns:
-            List of state component tensors
-        """
+        # Aggregate coordinates and counts per route
+        route_coord_sums.scatter_add_(1, segment_ids_expanded, coords)
+
+        ones = torch.ones(
+            batch_size, seq_len, 1, device=self.device, dtype=coords.dtype
+        )
+        # Count only valid nodes (using segment_ids to group)
+        route_node_counts.scatter_add_(1, self.segment_ids.unsqueeze(-1), ones)
+
+        # Calculate Centroids
+        route_node_counts = torch.clamp(route_node_counts, min=1.0)
+        route_centroids = route_coord_sums / route_node_counts
+
+        # Map centroids back to node positions
+        node_centroids = route_centroids.gather(1, segment_ids_expanded)
+
+        return (coords - node_centroids).norm(p=2, dim=-1, keepdim=True)
+
+    def build_state_components(
+        self, x: torch.Tensor, temp: torch.Tensor, time: torch.Tensor
+    ) -> List[torch.Tensor]:
+        """Assembles the state vector from static, topological, and dynamic features."""
         flags = self.feature_flags
         components = [x]
+
+        # Prepare coordinates with padding for gathering
         padding = max(0, x.size(1) - self.state_encoding.size(1))
         padded_coords = F.pad(self.state_encoding, (0, 0, 0, padding)).gather(
             1, x.expand(-1, -1, 2)
         )
 
-        # --- 1. STATIC ---
+        # 1. Static Features
         if flags.get("static", True):
-            is_depot = (x == 0).long()
-
             components.extend(
                 [
-                    padded_coords,  # coords (2)
-                    is_depot,  # is_depot (1)
-                    self.angles.gather(1, x),  # theta (1)
-                    self.dist_to_depot.gather(1, x),  # dist (1)
-                    self.demand_normalized.gather(1, x),  # Normalized demands
-                    self.isolation_score.gather(1, x),  # Isolation score
+                    padded_coords,
+                    (x == 0).long(),  # is_depot
+                    self.angles.gather(1, x),  # theta
+                    self.dist_to_depot.gather(1, x),  # dist to depot
+                    self.demand_normalized.gather(1, x),
+                    self.isolation_score.gather(1, x),
                 ]
             )
-        # --- 2. TOPOLOGY ---
-        if flags.get("topology", True):
-            prev_coords = torch.roll(padded_coords, shifts=1, dims=1)
-            next_coords = torch.roll(padded_coords, shifts=-1, dims=1)
-            components.extend([prev_coords, next_coords])
 
-        # --- 3. LOCAL COST ---
+        # 2. Topology (Immediate Neighbors)
+        if flags.get("topology", True):
+            components.append(torch.roll(padded_coords, shifts=1, dims=1))  # Prev
+            components.append(torch.roll(padded_coords, shifts=-1, dims=1))  # Next
+
+        # if flags.get("gap_ref", False):
+        #     current_cost = self.cost(x).unsqueeze(-1)
+
+        #     # Normalized Gap
+        #     # > 0 : Worse than baseline
+        #     # 0   : Equal to baseline
+        #     # < 0 : Better than baseline
+        #     gap = (current_cost - self.ref_cost) / self.ref_cost
+        #     components.append(gap)
+
+        # 3. Local Cost Features
         if flags.get("detour", True):
             components.append(calculate_detour_features(x, self.matrix))
-
         if flags.get("centroid", False):
             components.append(self.get_distance_to_centroid(x))
 
-        # --- 4. ROUTE STATUS ---
-        # Pre-calculate only if needed to save compute
+        # 4. Route Status (Capacity & Load)
         if any(flags.get(k) for k in ["route_pct", "slack", "node_pct"]):
-            node_pct, route_pct, remaining_capacity_fraction = (
-                self.get_percentage_demands()
-            )
-
+            node_pct, route_pct, slack = self.get_percentage_demands()
             if flags.get("route_pct", True):
                 components.append(route_pct)
-
             if flags.get("slack", False):
-                components.append(remaining_capacity_fraction)
-
+                components.append(slack)
             if flags.get("node_pct", False):
                 components.append(node_pct)
 
         if flags.get("route_cost", False):
             components.append(self.cost_per_route(x))
-        # --- 5. META ---
+
+        # 5. Metadata
         if flags.get("meta", True):
             components.extend([repeat_to(temp, x), repeat_to(time, x)])
 
         return components
 
+    # ------------------------------------------------------------------------
+    # Initialization & Helpers
+    # ------------------------------------------------------------------------
+
     @property
     def state_encoding(self) -> torch.Tensor:
-        """
-        Get node coordinates as static problem features.
-
-        Returns:
-            Coordinates tensor
-        """
         return self.coords
 
     def get_coords(self, solution: torch.Tensor) -> torch.Tensor:
-        """
-        Get coordinates in solution order.
-
-        Args:
-            solution: Solution tensor
-
-        Returns:
-            Ordered coordinates tensor
-        """
+        """Retrieves coordinates for nodes in the solution sequence."""
         return torch.gather(
             self.coords, 1, solution.expand(-1, -1, self.coords.size(-1))
         )
 
     def get_demands(self, solution: torch.Tensor) -> torch.Tensor:
-        """
-        Get demands in solution order.
-
-        Args:
-            solution: Solution tensor
-
-        Returns:
-            Ordered demands tensor
-        """
+        """Retrieves demands for nodes in the solution sequence."""
         return torch.gather(self.demands, 1, solution.squeeze(-1))
 
     def generate_init_state(
-        self, init_heuristic: str = "", multi_init: bool = False
+        self,
+        init_heuristic: str = "",
+        multi_init: bool = False,
+        init_list: List[str] = [],
     ) -> torch.Tensor:
-        """
-        Generate initial solutions using specified algorithm or multiple methods
-        if MULTI_INIT is enabled.
-        """
-
+        """Generates the initial population of solutions."""
         if multi_init:
-            split_size = self.n_problems // len(self.params["INIT_LIST"])
+            # Generate sub-batches with different heuristics and concatenate
+            split_size = self.n_problems // len(init_list)
             solutions = []
-            for i, method in enumerate(self.params["INIT_LIST"]):
-                sol = init_methods[method](self).to(self.device)
-                if i == len(self.params["INIT_LIST"]) - 1:
-                    solutions.append(sol[i * split_size :, :, :])
-                else:
-                    solutions.append(sol[i * split_size : (i + 1) * split_size, :, :])
-            max_size = max(sol.shape[1] for sol in solutions)
+
+            for i, method in enumerate(init_list):
+                raw_sol = INIT_METHODS[method](self).to(self.device)
+                start_idx = i * split_size
+                end_idx = (
+                    (i + 1) * split_size if i < len(init_list) - 1 else self.n_problems
+                )
+                solutions.append(raw_sol[start_idx:end_idx])
+
+            # Pad to match largest solution
+            max_size = max(s.shape[1] for s in solutions)
             solutions_padded = [
-                F.pad(sol, (0, 0, 0, max_size - sol.shape[1])) for sol in solutions
+                F.pad(s, (0, 0, 0, max_size - s.shape[1])) for s in solutions
             ]
             sol = torch.cat(solutions_padded, dim=0)
         else:
-            if init_heuristic not in init_methods:
-                raise ValueError(f"Unsupported initialization method: {init_heuristic}")
+            if init_heuristic not in INIT_METHODS:
+                raise ValueError(f"Unsupported init method: {init_heuristic}")
+            sol = INIT_METHODS[init_heuristic](self).to(self.device)
 
-            sol = init_methods[init_heuristic](self).to(self.device)
-        self.ordered_demands = self.get_demands(sol)
-        valid = is_feasible(sol, self.ordered_demands, self.capacity).all()
-        if not valid:
+        return self.init_parameters(sol)
+
+    def init_parameters(self, solution: torch.Tensor) -> torch.Tensor:
+        """Initializes internal bookkeeping tensors (segment_ids, mask) for the given solution."""
+        self.ordered_demands = self.get_demands(solution)
+
+        if not is_feasible(solution, self.ordered_demands, self.capacity).all():
             raise ValueError("Generated initial solution is not feasible.")
-        # Identify route segments
-        self.mask = self.ordered_demands != 0
-        segment_start = self.mask & ~torch.cat(
-            [torch.zeros_like(self.mask[:, :1]), self.mask[:, :-1]], dim=1
-        )
-        # Compute segment demands
-        self.segment_ids = torch.cumsum(segment_start, 1) * self.mask
 
-        return sol
+        # Identify route segments based on zero-demand delimiters (depots)
 
-    # --------------------------------
-    # Cost Calculation
-    # --------------------------------
+        self.mask = self.ordered_demands == 0
+        self.segment_ids = self.mask.long().cumsum(dim=1)
+        # self.mask = self.ordered_demands != 0
+        # segment_start = self.mask & ~torch.cat(
+        #     [torch.zeros_like(self.mask[:, :1]), self.mask[:, :-1]], dim=1
+        # )
+        # self.segment_ids = torch.cumsum(segment_start, 1) * self.mask
+
+        return solution
+
+    def update_tensor(self, solution: torch.Tensor) -> None:
+        """Updates internal bookkeeping tensors when the solution changes."""
+        self.ordered_demands = self.get_demands(solution)
+        # self.mask = self.ordered_demands != 0
+        # segment_start = self.mask & ~torch.cat(
+        #     [torch.zeros_like(self.mask[:, :1]), self.mask[:, :-1]], dim=1
+        # )
+        # self.segment_ids = torch.cumsum(segment_start, 1) * self.mask
+        self.mask = self.ordered_demands == 0
+        self.segment_ids = self.mask.long().cumsum(dim=1)
+
+    # ------------------------------------------------------------------------
+    # Cost & Load Calculations
+    # ------------------------------------------------------------------------
 
     def cost(self, solution: torch.Tensor) -> torch.Tensor:
-        """
-        Compute total route length for given solution.
-
-        Args:
-            solution: Tensor [batch, route_length, 1] representing routes
-
-        Returns:
-            Tensor [batch] containing total distance for each solution
-        """
+        """Computes total tour length (Euclidean)."""
         return torch.sum(self.get_edge_lengths_in_tour(solution), -1)
 
     def cost_per_route(self, solution: torch.Tensor) -> torch.Tensor:
-        """
-        Compute normalized cost contribution per route segment.
-
-        Args:
-            solution: Tensor [batch, route_length, 1] representing routes
-
-        Returns:
-            Tensor [batch, route_length, 1] with normalized route costs
-        """
+        """Computes normalized cost per specific route segment."""
         edge_lengths = self.get_edge_lengths_in_tour(solution)
         total_cost = torch.sum(edge_lengths, -1, keepdim=True)
 
+        # Sum lengths per segment ID
         segment_sums = torch.zeros_like(edge_lengths)
         segment_sums.scatter_add_(1, self.segment_ids, edge_lengths)
-        route_costs = segment_sums.gather(1, self.segment_ids) * self.mask
 
+        # Broadcast back to nodes
+        route_costs = segment_sums.gather(1, self.segment_ids) * self.mask
         num_routes = self.segment_ids.max(dim=1, keepdim=True)[0]
 
         return (route_costs * (num_routes / total_cost)).unsqueeze(-1)
 
     def get_edge_lengths_in_tour(self, solution: torch.Tensor) -> torch.Tensor:
-        """
-        Compute Euclidean distances between consecutive nodes in solution.
-
-        Args:
-            solution: Tensor [batch, num_nodes, 1]
-
-        Returns:
-            Tensor [batch, num_nodes] of inter-node distances
-        """
+        """Computes Euclidean distance between node[i] and node[i+1]."""
         coords = self.get_coords(solution)
         next_coords = torch.cat([coords[:, 1:, :], coords[:, :1, :]], dim=1)
         return (coords - next_coords).norm(p=2, dim=-1)
 
-    # --------------------------------
-    # Demand and Capacity Analysis
-    # --------------------------------
-
-    def get_percentage_demands(
-        self,
-    ) -> Tuple[torch.Tensor, ...]:
-        """
-        Compute demand-related percentages:
-        1. Node demand as a fraction of route demand
-        represents the proportion of a node's demand relative to the total demand
-        of the route.
-        2. Route demand as a fraction of vehicle capacity
-        represents how much the route is loaded relative to the vehicle's capacity.
-        3. Node demand as a fraction of vehicle capacity
-        represents the proportion of the node's demand relative to the vehicle's
-        capacity.
-
-        Returns:
-            Tuple of three percentage tensors
-        """
+    def get_percentage_demands(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Calculates demand ratios for state representation."""
         node_demands = self.ordered_demands
+
+        # Sum demands per route
         total_demand_per_route = torch.zeros_like(node_demands)
         total_demand_per_route.scatter_add_(1, self.segment_ids, node_demands)
-        route_demand_for_nodes = total_demand_per_route.gather(1, self.segment_ids)
-        # q / route Load
-        node_demand_fraction_of_route = torch.nan_to_num(
-            node_demands / route_demand_for_nodes, nan=0.0
-        )
-        # route Load / Q
-        route_demand_fraction_of_capacity = route_demand_for_nodes / self.capacity
+        route_load = total_demand_per_route.gather(1, self.segment_ids)
 
-        # (Q - route Load) / Q
-        remaining_capacity_fraction = (
-            self.capacity - route_demand_for_nodes
-        ) / self.capacity
+        # 1. Node demand / Route Load
+        node_frac_route = torch.nan_to_num(node_demands / route_load, nan=0.0)
+
+        # 2. Route Load / Vehicle Capacity
+        load_frac_capacity = route_load / self.capacity
+
+        # 3. Remaining Capacity / Vehicle Capacity
+        remaining_frac_capacity = (self.capacity - route_load) / self.capacity
 
         return (
-            node_demand_fraction_of_route.unsqueeze(-1),
-            route_demand_fraction_of_capacity.unsqueeze(-1),
-            remaining_capacity_fraction.unsqueeze(-1),
+            node_frac_route.unsqueeze(-1),
+            load_frac_capacity.unsqueeze(-1),
+            remaining_frac_capacity.unsqueeze(-1),
         )
 
-    # --------------------------------
-    # Solution Modification Heuristics
-    # --------------------------------
+    def _get_current_route_loads(self) -> torch.Tensor:
+        """Helper to get total load per route ID."""
+        num_routes = self.segment_ids.max() + 1
+        route_loads = torch.zeros(
+            self.n_problems,
+            int(num_routes.item()),
+            device=self.device,
+            dtype=self.ordered_demands.dtype,
+        )
+        route_loads.scatter_add_(1, self.segment_ids, self.ordered_demands)
+        return route_loads
+
+    # ------------------------------------------------------------------------
+    # Solution Update & Logic
+    # ------------------------------------------------------------------------
 
     def update(
         self, solution: torch.Tensor, action: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Modify solution by applying heuristic action.
-
-        Args:
-            solution: Current solution tensor [batch, route_length, 1]
-            action: Indices to modify [batch, 2] or [batch, 3] for mixed heuristic
-
-        Returns:
-            Tuple containing:
-            - New solution after applying heuristic (or original if infeasible)
-            - Validity flag for each solution in batch
+        Modifies the solution using the selected heuristic.
+        Handles 'rm_depot' experimental mode vs standard mode.
+        Checks feasibility and reverts if invalid.
         """
-        # Apply the selected update method
-        if self.params["UPDATE_METHOD"] == "rm_depot":
-            # First approach: Remove depot visits to simplify operations
-            # 1. Create mask identifying non-depot nodes
+        # Experimental: Remove depot, apply TSP move, re-insert depots
+        if self.params.get("UPDATE_METHOD") == "rm_depot":
             mask = solution.squeeze(-1) != 0
-
-            # 2. Extract only client nodes, reshaping to maintain batch dimension
             compact_sol = solution[mask].view(solution.size(0), -1, solution.size(-1))
 
-            # 3. Apply heuristic on client-only solution
-            modified_sol = self.apply_heuristic(compact_sol, action).long()
+            modified_compact = self.apply_heuristic(compact_sol, action).long()
+            sol = construct_cvrp_solution(modified_compact, self.demands, self.capacity)
 
-            # 4. Rebuild valid CVRP solution with depot visits inserted where needed
-            sol = construct_cvrp_solution(modified_sol, self.demands, self.capacity)
-
-            # Add padding to match the shape of the original solution
+            # Pad back to original size
             padding_size = solution.size(1) - sol.size(1)
             if padding_size > 0:
                 padding = torch.zeros(
@@ -775,220 +512,161 @@ class CVRP(Problem):
                 )
                 sol = torch.cat([sol, padding], dim=1)
 
+        # Standard: Direct modification
         else:
-            # Second approach: Apply heuristic directly on full solution
-            # (including depot visits)
             sol = self.apply_heuristic(solution, action).long()
-            # Note: This approach may require post-processing to ensure feasibility
 
-        new_ordered_demands = self.get_demands(sol)
-        # Check if the modified solutions are feasible (respect capacity constraints)
-        valid = (
-            is_feasible(sol, new_ordered_demands, self.capacity).unsqueeze(-1).long()
-        )
+        # Feasibility Check
+        new_demands = self.get_demands(sol)
+        valid = is_feasible(sol, new_demands, self.capacity).unsqueeze(-1).long()
 
-        # Return original solution if modified solution is infeasible
-        sol = torch.where(valid.unsqueeze(-1) == 1, sol, solution).to(torch.int64)
+        if not valid.all():
+            print("Warning: Some modified solutions are infeasible.")
 
-        return sol, valid
+        # Revert invalid moves
+        final_sol = torch.where(valid.unsqueeze(-1) == 1, sol, solution).to(torch.int64)
 
-    def update_tensor(self, solution: torch.Tensor):
-        """
-        Update internal tensors based on current solution.
-        Args:
-            solution: The current solution, shape [batch, num_nodes, 1].
-        """
-        # Update internal tensors based on new solution
-        self.ordered_demands = self.get_demands(solution)
-        # Identify route segments
-        self.mask = self.ordered_demands != 0
-        segment_start = self.mask & ~torch.cat(
-            [torch.zeros_like(self.mask[:, :1]), self.mask[:, :-1]], dim=1
-        )
-
-        # Compute segment demands
-        self.segment_ids = torch.cumsum(segment_start, 1) * self.mask
-
-    def _get_current_route_loads(self) -> torch.Tensor:
-        """
-        Calculate the total load (sum of demands) for each route.
-
-        Returns:
-            A tensor [batch, max_routes] containing the load of each route.
-            The index corresponds to the route ID (segment_id).
-        """
-        # Find the maximum number of routes in the batch to size the tensor
-        num_routes = self.segment_ids.max() + 1
-        route_loads = torch.zeros(
-            self.n_problems,
-            int(num_routes.item()),
-            device=self.device,
-            dtype=self.ordered_demands.dtype,
-        )
-
-        # scatter_add_ sums the demands (self.ordered_demands)
-        # into the correct "bins" of routes (indexed by self.segment_ids)
-        route_loads.scatter_add_(1, self.segment_ids, self.ordered_demands)
-        return route_loads
+        return final_sol, valid
 
     def get_action_mask(
         self, solution: torch.Tensor, node_pos: torch.Tensor
     ) -> torch.Tensor:
         """
-        Generates a mask of valid actions for a given node, respecting
-        vehicle capacity constraints.
-
-        Args:
-            solution: The current solution, shape [batch, num_nodes, 1].
-            node_pos: The *position* index of the source node in the tour,
-                    shape [batch, 1].
-
-        Returns:
-            A boolean mask of shape [batch, num_nodes] where `True`
-            represents a valid action.
+        Determines valid insertion moves based on the current state.
+        State tensors (segment_ids, ordered_demands) must be up-to-date via update_tensor().
         """
-        batch_size, num_nodes, _ = solution.shape
+        batch_size, seq_len = self.segment_ids.shape
+        node_pos_expanded = node_pos.unsqueeze(-1)  # [batch, 1]
 
-        # 1. Calculate current loads for all routes
-        current_route_loads = self._get_current_route_loads()
+        # 1. Expand Route Loads to Sequence Length
+        # _get_current_route_loads gives [batch, num_routes].
+        # We gather this so every position knows the total load of the route it belongs to.
+        per_route_loads = self._get_current_route_loads()
+        target_route_loads = torch.gather(per_route_loads, 1, self.segment_ids)
 
-        node_pos = node_pos.unsqueeze(-1)
+        # 2. Get Source Node Information (The node we are moving)
+        source_demand = torch.gather(self.ordered_demands, 1, node_pos_expanded)
+        source_route_id = torch.gather(self.segment_ids, 1, node_pos_expanded)
 
-        # 2. Get info for the source node (the one to be moved)
-        # .gather() selects values at the indices specified by node_pos
-        source_demand = torch.gather(self.ordered_demands, 1, node_pos)
-        source_route_id = torch.gather(self.segment_ids, 1, node_pos)
-        source_route_load = torch.gather(current_route_loads, 1, source_route_id)
+        # Check if source is valid (e.g., demand > 0 implies it's a customer, not depot/padding)
+        is_source_valid = source_demand > 0
 
-        # 3. Get info for all potential target nodes
-        target_demands = self.ordered_demands
+        # 3. Compute Heuristic Mask
         target_route_ids = self.segment_ids
-        # .gather() here retrieves the route load for EACH target node
-        target_route_loads = torch.gather(current_route_loads, 1, target_route_ids)
+        mask = torch.zeros(batch_size, seq_len, device=self.device, dtype=torch.bool)
 
-        # Mask for depot positions (depot has segment_id == 0)
-        is_depot_mask = self.segment_ids == 0
+        if self.heuristic == insertion:
+            # Condition A: Intra-Route Move (Always Valid)
+            # Moving a node within its own route does not change the total load.
+            is_same_route = target_route_ids == source_route_id
 
-        # --- Heuristic-specific logic ---
-        heuristic_func = self.heuristic
-        if heuristic_func is None:
-            raise ValueError("Single heuristic is not configured.")
+            # Condition B: Inter-Route Move (Capacity Check)
+            # If moving to a new route, check if (RouteLoad + NodeDemand) <= Capacity
+            potential_loads = target_route_loads + source_demand
+            is_capacity_valid = potential_loads <= self.capacity
 
-        # By default, apply the base topological mask (cannot act on oneself)
-        mask = torch.ones(batch_size, num_nodes, device=self.device, dtype=torch.bool)
-        # mask.scatter_(1, node_pos.long(), False)
+            # Combine: Valid if (Same Route) OR (Fits Capacity)
+            mask = is_same_route | is_capacity_valid
 
-        if heuristic_func is swap:
-            # For a 'swap' between source node (A) and target node (B):
-            # Load Route A' = Load Route A - Demand A + Demand B
-            # Load Route B' = Load Route B - Demand B + Demand A
-
-            # Calculate potential new loads for source and target routes
-            new_load_for_source_route = (
-                source_route_load - source_demand + target_demands
-            )
-            new_load_for_target_route = (
-                target_route_loads - target_demands + source_demand
-            )
-
-            # Check validity
-            source_route_ok = new_load_for_source_route <= self.capacity
-            target_route_ok = new_load_for_target_route <= self.capacity
-
-            # If the swap is intra-route, the total load doesn't change,
-            # so it's always valid
-            is_intra_route = source_route_id == target_route_ids
-
-            # An action is valid if (it's intra-route) OR
-            # (both new routes respect capacity)
-            capacity_mask = torch.where(
-                is_intra_route, torch.ones_like(mask), source_route_ok & target_route_ok
-            )
-            mask &= capacity_mask
-
-            # Cannot swap with the depot
-            mask &= ~is_depot_mask
-
-        elif heuristic_func is insertion:
-            # For an 'insertion' of source node (A) into the route of target node (B):
-            # Route A is lightened (always valid).
-            # Route B is heavier: Load Route B' = Load Route B + Demand A
-
-            # This block handles a specific edge case where target_route_loads
-            # might be 0. It tries to get a valid load by looking at the next node.
-            mask = torch.ones_like(target_route_loads, dtype=torch.bool)
-            batch_idx = torch.arange(target_route_loads.shape[0]).unsqueeze(-1)
-            mask[batch_idx, node_pos] = False
-            output_flat = target_route_loads[mask]
-            remaining_nodes = output_flat.reshape(target_route_loads.shape[0], -1)
-
-            target_route_loads = torch.cat(
-                [
-                    remaining_nodes,
-                    torch.zeros(
-                        batch_size,
-                        1,
-                        device=self.device,
-                        dtype=target_route_loads.dtype,
-                    ),
-                ],
-                dim=1,
-            )
-            shifted_target_loads = torch.cat(
-                [
-                    target_route_loads[:, 1].unsqueeze(-1),
-                    target_route_loads[:, :-1],
-                ],
-                dim=1,
-            )
-
-            adjusted_target_loads = torch.max(target_route_loads, shifted_target_loads)
-
-            new_load_for_target_route = adjusted_target_loads + source_demand
-            capacity_mask = new_load_for_target_route <= self.capacity
-
-            is_intra_route = source_route_id == target_route_ids
-
-            # Valid if (it's intra-route) OR
-            # (the new target route respects capacity)
-            capacity_mask = torch.where(
-                is_intra_route, torch.ones_like(mask), capacity_mask
-            )
-            mask &= capacity_mask
-
-            # Ensure the last and first value of each row is False
+            # Rules:
+            # - Cannot insert after itself (no-op)
+            mask.scatter_(1, node_pos_expanded, False)
+            # - Cannot insert after the last token (terminator/padding)
             mask[:, -1] = False
-            mask[:, 0] = False
 
-        elif heuristic_func is two_opt:
-            raise NotImplementedError(
-                "2-opt is not implemented for UPDATE_METHOD == 'two_opt'."
-            )
-
+        elif self.heuristic in [swap, two_opt]:
+            raise NotImplementedError(f"{self.heuristic} not implemented in masking.")
         else:
-            raise NotImplementedError(
-                f"Masking for heuristic {heuristic_func.__name__} is not implemented."
-            )
+            raise NotImplementedError("Unknown heuristic")
 
-        # --- Final invalidation logic ---
+        # 4. Safety / Fallback (Force No-Op if trapped)
+        # If the source node is invalid (e.g. depot) OR no valid moves exist,
+        # we force the agent to select the node itself (No-Op).
 
-        # If source_demand, source_route_id, or source_route_load is 0,
-        # the source node is invalid (e.g., it's a depot or padding)
-        invalid_source = (
-            (source_demand == 0) | (source_route_id == 0) | (source_route_load == 0)
-        )
+        has_valid_moves = mask.any(dim=1, keepdim=True)
+        force_no_op = (~is_source_valid) | (~has_valid_moves)
 
-        # If the entire mask row is False (no valid moves found),
-        # treat the source as invalid as well.
-        invalid_source |= ~mask.any(dim=1, keepdim=True)
+        # Create a mask that only allows selecting the node itself
+        no_op_mask = torch.zeros_like(mask)
+        no_op_mask.scatter_(1, node_pos_expanded, True)
 
-        # Create a mask that is only `True` at the source node's position.
-        # This is used as a "no-op" or "sentinel" action.
-        empty_mask = torch.zeros_like(mask, dtype=torch.bool)
-        source_only_mask = empty_mask.scatter(1, node_pos.long(), True)
+        return torch.where(force_no_op, no_op_mask, mask)
 
-        # If the source was invalid, replace the calculated mask with the
-        # 'source_only_mask'. Otherwise, keep the calculated mask.
-        mask = torch.where(invalid_source, source_only_mask, mask)
+    # def get_action_mask(
+    #     self, solution: torch.Tensor, node_pos: torch.Tensor
+    # ) -> torch.Tensor:
+    #     """
+    #     Determines valid moves (Insertion Only).
 
-        return mask
+    #     A move is valid if:
+    #     1. It is within the same route (Intra-route).
+    #     2. It is to a different route AND that route has spare capacity.
+
+    #     Handles special logic for inserting after a depot (implies entering the *next* route).
+    #     """
+    #     batch_size, num_nodes, _ = solution.shape
+
+    #     # 1. Prepare State Data
+    #     current_route_loads = self._get_current_route_loads()
+    #     node_pos = node_pos.unsqueeze(-1)
+
+    #     # Source (Node being moved) info
+    #     source_demand = torch.gather(self.ordered_demands, 1, node_pos)
+    #     source_route_id = torch.gather(self.segment_ids, 1, node_pos)
+    #     is_source_valid = source_demand > 0
+
+    #     # Target (Destination position) info
+    #     target_route_ids = self.segment_ids
+    #     target_route_loads = torch.gather(current_route_loads, 1, target_route_ids)
+
+    #     # 2. Fix Logic for Depots & Route Transitions
+    #     # If target is depot (ID=0), we are technically looking at the *next* route.
+    #     is_target_depot = target_route_ids == 0
+
+    #     # Look ahead for loads
+    #     next_route_loads = torch.roll(target_route_loads, shifts=-1, dims=1)
+    #     next_route_loads[:, -1] = 0
+
+    #     effective_target_loads = torch.where(
+    #         is_target_depot, next_route_loads, target_route_loads
+    #     )
+
+    #     # Look ahead for Route IDs
+    #     next_route_ids = torch.roll(target_route_ids, shifts=-1, dims=1)
+    #     next_route_ids[:, -1] = 0
+
+    #     effective_target_ids = torch.where(
+    #         is_target_depot, next_route_ids, target_route_ids
+    #     )
+
+    #     # 3. Compute Heuristic Mask
+    #     mask = torch.ones(batch_size, num_nodes, device=self.device, dtype=torch.bool)
+
+    #     if self.heuristic is insertion:
+    #         # Condition A: Intra-route move
+    #         is_same_route = source_route_id == effective_target_ids
+
+    #         # Condition B: Capacity Check (Destination Load + Source Demand <= Capacity)
+    #         new_load = effective_target_loads + source_demand
+    #         is_capacity_valid = new_load <= self.capacity
+
+    #         mask = is_same_route | is_capacity_valid
+
+    #         # Rules: Cannot insert after itself, Cannot insert at array end
+    #         mask.scatter_(1, node_pos, False)
+    #         mask[:, -1] = False
+
+    #     elif self.heuristic in [swap, two_opt]:
+    #         raise NotImplementedError(f"{self.heuristic} not implemented in masking.")
+    #     else:
+    #         raise NotImplementedError("Unknown heuristic")
+
+    #     # 4. Final Safety Constraints
+    #     # Allow invalid nodes (e.g. depot) to only perform "No-Op" (select themselves)
+    #     no_op_mask = torch.zeros_like(mask)
+    #     no_op_mask.scatter_(1, node_pos, True)
+
+    #     has_valid_moves = mask.any(dim=1, keepdim=True)
+    #     force_no_op = (~is_source_valid) | (~has_valid_moves)
+
+    #     return torch.where(force_no_op, no_op_mask, mask)
