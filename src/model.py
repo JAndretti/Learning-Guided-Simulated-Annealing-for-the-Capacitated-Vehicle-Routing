@@ -356,28 +356,30 @@ class CVRPActor(SAModel):
             num_hidden_layers=num_hidden_layers,
             device=device,
         )
+        if device == "mps":
+            pass
+        else:
+            # Apply the generic PPO init to the WHOLE network
+            self.city1_net.apply(self.init_weights)
 
-        # Apply the generic PPO init to the WHOLE network
-        self.city1_net.apply(self.init_weights)
+            # 3. Manually overwrite the Output Layer (The last layer in the list)
+            # We access it using [-1] because it is the last item added to layers[]
+            last_layer = self.city1_net[-1]
 
-        # 3. Manually overwrite the Output Layer (The last layer in the list)
-        # We access it using [-1] because it is the last item added to layers[]
-        last_layer = self.city1_net[-1]
+            # IF THIS IS AN ACTOR (Policy):
+            # We use 0.01 so actions start out random/uniform (Crucial for PPO)
+            nn.init.orthogonal_(last_layer.weight, gain=0.01)
 
-        # IF THIS IS AN ACTOR (Policy):
-        # We use 0.01 so actions start out random/uniform (Crucial for PPO)
-        nn.init.orthogonal_(last_layer.weight, gain=0.01)
+            # Ensure bias is 0 for the output
+            if last_layer.bias is not None:
+                nn.init.constant_(last_layer.bias, 0.0)
 
-        # Ensure bias is 0 for the output
-        if last_layer.bias is not None:
-            nn.init.constant_(last_layer.bias, 0.0)
-
-        self.city2_net.apply(self.init_weights)
-        last_layer = self.city2_net[-1]
-        nn.init.orthogonal_(last_layer.weight, gain=0.01)
-        # Ensure bias is 0 for the output
-        if last_layer.bias is not None:
-            nn.init.constant_(last_layer.bias, 0.0)
+            self.city2_net.apply(self.init_weights)
+            last_layer = self.city2_net[-1]
+            nn.init.orthogonal_(last_layer.weight, gain=0.01)
+            # Ensure bias is 0 for the output
+            if last_layer.bias is not None:
+                nn.init.constant_(last_layer.bias, 0.0)
 
     def sample_from_logits(
         self, logits: torch.Tensor, greedy: bool = False, one_hot: bool = False
