@@ -2,11 +2,11 @@
 PROJECT: "LGSA" # Project name
 GROUP: "" # Experimentation group
 COMMENT: ""
-LOG: True # Enable or disable logging with WandB
+LOG: False # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
-DEVICE: "cuda" # Hardware used: cpu, cuda, or mps
+DEVICE: "mps" # Hardware used: cpu, cuda, or mps
 SEED: 42 # Random seed for reproducibility
 
 # =============== CVRP Problem ===============
@@ -20,7 +20,7 @@ HEURISTIC: "insertion" # Local search method (insertion, swap, two_opt)
 
 UPDATE_METHOD: "valid" # Update method after heuristic
 INIT: "random" # Initial solution method
-MULTI_INIT: True # Use multiple initial solutions
+MULTI_INIT: False # Use multiple initial solutions
 MULTI_INIT_STEP: 0 # Step where all initial solutions are used
 INIT_LIST: ["isolate", "random", "sweep", "nearest_neighbor"] # List of initial solution methods
 
@@ -52,7 +52,7 @@ features:
 
 # =============== Model Architecture ===============
 MODEL: "seq" # Model type: pairs, seq
-CRITIC_MODEL: "attention" # Critic model type: ff, attention
+CRITIC_MODEL: "ff" # Critic model type: ff, attention
 EMBEDDING_DIM: 32 # Embedding dimension
 NUM_H_LAYERS: 1 # Number of layers in the model
 

@@ -619,7 +619,74 @@ class CVRP(Problem):
             # - Cannot insert after the last token (terminator/padding)
             mask[:, -1] = False
 
-        elif self.heuristic in [swap, two_opt]:
+        elif self.heuristic == swap:
+            # We need the load of the route the SOURCE node is currently in.
+            # source_route_load: [batch, 1]
+            source_route_load = torch.gather(per_route_loads, 1, source_route_id)
+
+            # Condition A: Intra-Route Move (Always Valid)
+            # Swapping two nodes in the same route doesn't change total load.
+            is_same_route = target_route_ids == source_route_id
+
+            # Condition B: Inter-Route Move (Capacity Check)
+            # We must check the feasibility of BOTH routes involved in the swap.
+
+            # 1. New Source Route Load = (Current Source Load) - (Source Node Demand) + (Target Node Demand)
+            new_source_route_load = (
+                source_route_load - source_demand + self.ordered_demands
+            )
+
+            # 2. New Target Route Load = (Current Target Load) - (Target Node Demand) + (Source Node Demand)
+            new_target_route_load = (
+                target_route_loads - self.ordered_demands + source_demand
+            )
+
+            is_capacity_valid = (new_source_route_load <= self.capacity) & (
+                new_target_route_load <= self.capacity
+            )
+
+            # ----------------------------------------------------------------
+            # 1. Standard Swap Mask (Customers Only)
+            # ----------------------------------------------------------------
+            # Valid if (Same Route OR Capacity Fits) AND (Target is a Customer)
+            standard_swap_mask = (is_same_route | is_capacity_valid) & (
+                self.ordered_demands > 0
+            )
+
+            # ----------------------------------------------------------------
+            # 2. New Route Creation (Triad Pattern [0, 0, 0])
+            # ----------------------------------------------------------------
+            # We want to select the MIDDLE zero in a sequence of [0, 0, 0].
+
+            # Check current node is depot
+            is_center_depot = self.ordered_demands == 0
+
+            # Check previous node is depot (Shift right by 1)
+            prev_demands = torch.roll(self.ordered_demands, shifts=1, dims=1)
+            is_prev_depot = prev_demands == 0
+            # Fix roll wrap-around: First element cannot have a 'previous' in this logic
+            is_prev_depot[:, 0] = False
+
+            # Check next node is depot (Shift left by 1)
+            next_demands = torch.roll(self.ordered_demands, shifts=-1, dims=1)
+            is_next_depot = next_demands == 0
+            # Fix roll wrap-around: Last element cannot have a 'next' in this logic
+            is_next_depot[:, -1] = False
+
+            # The Pattern: [0, 0, 0] -> Select the middle one
+            new_route_mask = is_prev_depot & is_center_depot & is_next_depot
+
+            # ----------------------------------------------------------------
+            # 3. Combine Masks
+            # ----------------------------------------------------------------
+            # Allow move if it is a valid Standard Swap OR a Valid New Route creation
+            mask = standard_swap_mask | new_route_mask
+
+            # Rules:
+            # - Cannot swap with itself
+            mask.scatter_(1, node_pos_expanded, False)
+
+        elif self.heuristic == two_opt:
             raise NotImplementedError(f"{self.heuristic} not implemented in masking.")
         else:
             raise NotImplementedError("Unknown heuristic")

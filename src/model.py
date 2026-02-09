@@ -693,14 +693,17 @@ class CVRPCritic(nn.Module):
             num_hidden_layers=num_hidden_layers,
             device=device,
         )
-        self.q_func.apply(self.init_weights)
-        last_layer = self.q_func[-1]
-        # IF THIS IS A CRITIC (Value Function):
-        # We use 1.0 because the value estimate shouldn't be squashed too small
-        nn.init.orthogonal_(last_layer.weight, gain=1.0)
-        # Ensure bias is 0 for the output
-        if last_layer.bias is not None:
-            nn.init.constant_(last_layer.bias, 0.0)
+        if device == "mps":
+            pass
+        else:
+            self.q_func.apply(self.init_weights)
+            last_layer = self.q_func[-1]
+            # IF THIS IS A CRITIC (Value Function):
+            # We use 1.0 because the value estimate shouldn't be squashed too small
+            nn.init.orthogonal_(last_layer.weight, gain=1.0)
+            # Ensure bias is 0 for the output
+            if last_layer.bias is not None:
+                nn.init.constant_(last_layer.bias, 0.0)
 
     @staticmethod
     def init_weights(m: nn.Module) -> None:
@@ -777,9 +780,12 @@ class CVRPCriticAttention(nn.Module):
         self.apply(self.init_weights)
 
         # Specific Orthogonal Init for the final head (Critical for PPO)
-        nn.init.orthogonal_(self.value_head.weight, gain=1.0)
-        if self.value_head.bias is not None:
-            nn.init.constant_(self.value_head.bias, 0.0)
+        if device == "mps":
+            pass
+        else:
+            nn.init.orthogonal_(self.value_head.weight, gain=1.0)
+            if self.value_head.bias is not None:
+                nn.init.constant_(self.value_head.bias, 0.0)
 
     @staticmethod
     def init_weights(m: nn.Module) -> None:
