@@ -2,7 +2,7 @@
 # FAST SIMULATED ANNEALING INFERENCE
 # ============================================================================
 
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 import torch
 from tqdm import tqdm
@@ -158,14 +158,17 @@ def sa_test(
             # Vectorized 'where' is usually faster than masking on GPU due to coherence.
 
             # Update Cost
-            current_cost = torch.where(is_accepted.bool(), proposed_cost, current_cost)
+            current_cost = (
+                is_accepted * proposed_cost + (1 - is_accepted) * current_cost
+            )
 
             # Update Solution Tensor
             # extend_to broadcasts the (B,) flag to (B, N, 1)
             is_accepted_expanded = extend_to(is_accepted, current_solution)
-            current_solution = torch.where(
-                is_accepted_expanded.bool(), proposed_sol, current_solution
-            )
+            current_solution = (
+                is_accepted_expanded * proposed_sol
+                + (1 - is_accepted_expanded) * sol_components[0]
+            ).long()
 
             # Important: Sync problem internal state (demands, masks) to the new current solution
             problem.update_tensor(current_solution)
@@ -175,8 +178,9 @@ def sa_test(
             if is_improvement.any():
                 best_cost = torch.minimum(current_cost, best_cost)
                 is_imp_expanded = extend_to(is_improvement.long(), best_solution)
-                best_solution = torch.where(
-                    is_imp_expanded.bool(), current_solution, best_solution
+                best_solution = (
+                    is_imp_expanded * current_solution
+                    + (1 - is_imp_expanded) * best_solution
                 )
 
             # F. Prepare Next Step (Temperature & State)

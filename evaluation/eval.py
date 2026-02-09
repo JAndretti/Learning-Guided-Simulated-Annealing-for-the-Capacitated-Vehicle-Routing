@@ -20,7 +20,7 @@ from func import (
     set_seed,
 )
 
-from init import test_model, initialize_models, initialize_test_problem
+from init import initialize_models, initialize_test_problem, test_model
 from problem import CVRP
 from utils import setup_logging
 
@@ -46,6 +46,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--FOLDER",
+    default="BEST",
     type=str,
     help="Path to the trained model",
 )
@@ -76,6 +77,21 @@ parser.add_argument(
     default=False,
     help="Enable greedy mode",
 )
+parser.add_argument(
+    "--seed",
+    default=0,
+    type=int,
+    help="Random seed",
+)
+
+parser.add_argument(
+    "--no-metro",
+    dest="METROPOLIS",
+    action="store_false",
+    default=True,
+    help="Disable the Metropolis acceptance criterion",
+)
+
 args = parser.parse_args()
 
 # Configuration
@@ -90,13 +106,14 @@ cfg = {
         if torch.backends.mps.is_available()
         else "cpu"
     ),
-    "SEED": 0,
+    "SEED": args.seed,
     "LOAD_PB": True,
     "INIT": args.INIT,
     "MULTI_INIT": False,
     "DATA": args.DATA,
     "BASELINE": args.BASELINE,
     "GREEDY": args.GREEDY,
+    "METROPOLIS": args.METROPOLIS,
 }
 set_seed(cfg["SEED"])
 
@@ -245,6 +262,8 @@ def perform_test(
     )
 
     execution_time = time.time() - start_time
+    # Move tensors to CPU
+    test = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in test.items()}
     init_cost = torch.mean(problem.cost(init_x))
     final_cost = torch.mean(torch.tensor(test["min_cost"]))
 
@@ -267,6 +286,11 @@ def perform_test(
         )
 
         execution_time_baseline = time.time() - start_time
+        test_baseline = {
+            k: v.cpu() if isinstance(v, torch.Tensor) else v
+            for k, v in test_baseline.items()
+        }
+
         HP["OUTER_STEPS"] = step
         final_cost_baseline = torch.mean(torch.tensor(test_baseline["min_cost"]))
     else:

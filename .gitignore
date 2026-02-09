@@ -6,7 +6,17 @@ __pycache__/
 .DS_store
 
 # Model and logs 
-wandb/
+# 1. Ignore everything inside wandb
+/wandb/*
+
+# 2. Allow the LGSA folder so Git can look inside it
+!/wandb/LGSA/
+
+# 3. Ignore everything inside LGSA (to ensure we still ignore junk in here)
+/wandb/LGSA/*
+
+# 4. Finally, specifically allow the BEST folder and everything in it
+!/wandb/LGSA/BEST/
 
 # Profiling files
 profiling/

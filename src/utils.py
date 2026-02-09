@@ -48,7 +48,7 @@ def setup_device(device: str) -> str:
         if torch.cuda.is_available():
             os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
             torch.cuda.empty_cache()
-            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.benchmark = False
 
     # Apple Metal Performance Shaders (MPS) configuration
     else:
@@ -60,7 +60,7 @@ def setup_device(device: str) -> str:
     return device
 
 
-def setup_reproducibility(seed: int) -> None:
+def setup_reproducibility(seed: int, train: bool = False) -> None:
     """
     Set random seeds for reproducible results across different runs.
 
@@ -79,6 +79,11 @@ def setup_reproducibility(seed: int) -> None:
     # This makes operations like convolution deterministic but might slow down training slightly.
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+    if train:
+        # Force PyTorch to use deterministic algorithms (will raise error if an op is non-deterministic)
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        torch.use_deterministic_algorithms(True)
 
 
 def extend(tensor: torch.Tensor, dims: int) -> torch.Tensor:

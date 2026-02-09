@@ -147,7 +147,7 @@ def calculate_reward(
         )
 
         # Penalize invalid, zero for no-op, value for valid
-        reward_immediate = torch.where( 
+        reward_immediate = torch.where(
             ~is_valid.bool().squeeze(-1),
             -1.5,
             torch.where(
@@ -428,7 +428,10 @@ def sa_train(
         "costs": tracking["cost_history"],
         "init_cost": opt_state["initial_cost"],
         "reward": tracking["reward_signal"],
-        "average_sum_rewards": torch.stack(tracking["all_rewards"]).sum(dim=0).mean(),
+        "average_sum_rewards": torch.stack(tracking["all_rewards"])
+        .cpu()
+        .sum(dim=0)
+        .mean(),
         "temperature": tracking["temperature"],
         "best_step": opt_state["best_cost_step"].float(),
         "capacity_left": capacity_utilization(

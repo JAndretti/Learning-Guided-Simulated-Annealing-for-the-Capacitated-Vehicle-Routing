@@ -177,6 +177,12 @@ class CVRP(Problem):
             self.matrix = calculate_distance_matrix(self.coords)
             self.isolation_score = calculate_knn_isolation(self.matrix, k=5)
 
+            (
+                self.mean_dist_10,
+                self.mean_dist_50,
+                self.density_ratio,
+            ) = self._calculate_density_features(self.matrix)
+
             # Normalize distances from depot [0, 1]
             self.dist_to_depot = self.matrix[:, 0, 0:]
             min_dist = torch.min(self.dist_to_depot, dim=1, keepdim=True)[0]
@@ -218,12 +224,14 @@ class CVRP(Problem):
     def get_input_dim(self) -> int:
         """Calculates input channel dimension based on active feature flags."""
         dims = {
-            "static": 7,  # x, y, th, d, is_depot, knn, q/Q
+            "static": 7,  # x, y, th, d, is_depot, q/Q, knn
             "topology": 4,  # prev_x, prev_y, next_x, next_y
+            "density10": 1,  # mean_dist_10
+            "density50": 1,  # mean_dist_50
+            "density_ratio": 1,  # density_ratio
             # "gap_ref": 1,
             "detour": 1,
             "centroid": 1,
-            "route_status": 4,  # load/Q, slack, q/load, route_cost_norm
             "route_cost": 1,
             "route_pct": 1,
             "slack": 1,
@@ -231,6 +239,39 @@ class CVRP(Problem):
             "meta": 2,  # temp, progress
         }
         return sum(dims[k] for k, v in self.feature_flags.items() if v)
+
+    def _calculate_density_features(
+        self, matrix: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Computes the mean distance of the 10% and 50% closest nodes, and their ratio.
+        Returns: (mean_dist_10, mean_dist_50, density_ratio)
+        """
+        num_nodes = matrix.size(-1)
+
+        # Determine k for 10% and 50%
+        # We enforce max(1, ...) to handle very small problem sizes safely
+        k_10 = max(1, int(num_nodes * 0.10))
+        k_50 = max(1, int(num_nodes * 0.50))
+
+        # Retrieve the smallest distances.
+        # We fetch k_50 + 1 because the 0th element is the node itself (dist=0).
+        # largest=False ensures we get the smallest distances.
+        top_vals, _ = torch.topk(matrix, k=k_50 + 1, dim=-1, largest=False, sorted=True)
+
+        # Slice to exclude the node itself (column 0, which is 0.0)
+        closest_50_block = top_vals[:, :, 1:]
+
+        # Calculate Mean Distance to closest 50%
+        mean_dist_50 = closest_50_block.mean(dim=-1, keepdim=True)
+
+        # Calculate Mean Distance to closest 10% (slice the already sorted block)
+        mean_dist_10 = closest_50_block[:, :, :k_10].mean(dim=-1, keepdim=True)
+
+        # Calculate Ratio (add epsilon to avoid division by zero)
+        density_ratio = mean_dist_10 / torch.clamp(mean_dist_50, min=1e-8)
+
+        return mean_dist_10, mean_dist_50, density_ratio
 
     def get_distance_to_centroid(self, solution: torch.Tensor) -> torch.Tensor:
         """Computes distance of each node to its route's center of gravity."""
@@ -309,26 +350,35 @@ class CVRP(Problem):
         #     gap = (current_cost - self.ref_cost) / self.ref_cost
         #     components.append(gap)
 
-        # 3. Local Cost Features
-        if flags.get("detour", True):
+        # 3. Density Features
+        if flags.get("density10", False):  # Defaults to True if you want them always on
+            components.append(self.mean_dist_10.gather(1, x))
+        if flags.get("density50", False):
+            components.append(self.mean_dist_50.gather(1, x))
+        if flags.get("density_ratio", False):
+            components.append(self.density_ratio.gather(1, x))
+
+        # 4. Local Cost Features
+        if flags.get("detour", False):
             components.append(calculate_detour_features(x, self.matrix))
         if flags.get("centroid", False):
             components.append(self.get_distance_to_centroid(x))
 
-        # 4. Route Status (Capacity & Load)
+        # 5. Route Status (Capacity & Load)
         if any(flags.get(k) for k in ["route_pct", "slack", "node_pct"]):
             node_pct, route_pct, slack = self.get_percentage_demands()
-            if flags.get("route_pct", True):
+            if flags.get("route_pct", False):
                 components.append(route_pct)
             if flags.get("slack", False):
                 components.append(slack)
             if flags.get("node_pct", False):
                 components.append(node_pct)
 
+        # 6. Route Cost Normalized
         if flags.get("route_cost", False):
             components.append(self.cost_per_route(x))
 
-        # 5. Metadata
+        # 7. Metadata
         if flags.get("meta", True):
             components.extend([repeat_to(temp, x), repeat_to(time, x)])
 
@@ -396,11 +446,6 @@ class CVRP(Problem):
 
         self.mask = self.ordered_demands == 0
         self.segment_ids = self.mask.long().cumsum(dim=1)
-        # self.mask = self.ordered_demands != 0
-        # segment_start = self.mask & ~torch.cat(
-        #     [torch.zeros_like(self.mask[:, :1]), self.mask[:, :-1]], dim=1
-        # )
-        # self.segment_ids = torch.cumsum(segment_start, 1) * self.mask
 
         return solution
 
@@ -591,82 +636,3 @@ class CVRP(Problem):
         no_op_mask.scatter_(1, node_pos_expanded, True)
 
         return torch.where(force_no_op, no_op_mask, mask)
-
-    # def get_action_mask(
-    #     self, solution: torch.Tensor, node_pos: torch.Tensor
-    # ) -> torch.Tensor:
-    #     """
-    #     Determines valid moves (Insertion Only).
-
-    #     A move is valid if:
-    #     1. It is within the same route (Intra-route).
-    #     2. It is to a different route AND that route has spare capacity.
-
-    #     Handles special logic for inserting after a depot (implies entering the *next* route).
-    #     """
-    #     batch_size, num_nodes, _ = solution.shape
-
-    #     # 1. Prepare State Data
-    #     current_route_loads = self._get_current_route_loads()
-    #     node_pos = node_pos.unsqueeze(-1)
-
-    #     # Source (Node being moved) info
-    #     source_demand = torch.gather(self.ordered_demands, 1, node_pos)
-    #     source_route_id = torch.gather(self.segment_ids, 1, node_pos)
-    #     is_source_valid = source_demand > 0
-
-    #     # Target (Destination position) info
-    #     target_route_ids = self.segment_ids
-    #     target_route_loads = torch.gather(current_route_loads, 1, target_route_ids)
-
-    #     # 2. Fix Logic for Depots & Route Transitions
-    #     # If target is depot (ID=0), we are technically looking at the *next* route.
-    #     is_target_depot = target_route_ids == 0
-
-    #     # Look ahead for loads
-    #     next_route_loads = torch.roll(target_route_loads, shifts=-1, dims=1)
-    #     next_route_loads[:, -1] = 0
-
-    #     effective_target_loads = torch.where(
-    #         is_target_depot, next_route_loads, target_route_loads
-    #     )
-
-    #     # Look ahead for Route IDs
-    #     next_route_ids = torch.roll(target_route_ids, shifts=-1, dims=1)
-    #     next_route_ids[:, -1] = 0
-
-    #     effective_target_ids = torch.where(
-    #         is_target_depot, next_route_ids, target_route_ids
-    #     )
-
-    #     # 3. Compute Heuristic Mask
-    #     mask = torch.ones(batch_size, num_nodes, device=self.device, dtype=torch.bool)
-
-    #     if self.heuristic is insertion:
-    #         # Condition A: Intra-route move
-    #         is_same_route = source_route_id == effective_target_ids
-
-    #         # Condition B: Capacity Check (Destination Load + Source Demand <= Capacity)
-    #         new_load = effective_target_loads + source_demand
-    #         is_capacity_valid = new_load <= self.capacity
-
-    #         mask = is_same_route | is_capacity_valid
-
-    #         # Rules: Cannot insert after itself, Cannot insert at array end
-    #         mask.scatter_(1, node_pos, False)
-    #         mask[:, -1] = False
-
-    #     elif self.heuristic in [swap, two_opt]:
-    #         raise NotImplementedError(f"{self.heuristic} not implemented in masking.")
-    #     else:
-    #         raise NotImplementedError("Unknown heuristic")
-
-    #     # 4. Final Safety Constraints
-    #     # Allow invalid nodes (e.g. depot) to only perform "No-Op" (select themselves)
-    #     no_op_mask = torch.zeros_like(mask)
-    #     no_op_mask.scatter_(1, node_pos, True)
-
-    #     has_valid_moves = mask.any(dim=1, keepdim=True)
-    #     force_no_op = (~is_source_valid) | (~has_valid_moves)
-
-    #     return torch.where(force_no_op, no_op_mask, mask)

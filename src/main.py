@@ -16,7 +16,6 @@ Key Components:
 
 # Standard Library
 import math
-import random
 import warnings
 from typing import Any, Dict, Optional, Tuple
 
@@ -78,6 +77,7 @@ def log_training_and_test_metrics(
     test_results: Optional[Dict[str, torch.Tensor]],
     epoch: int,
     config: Dict[str, Any],
+    log_test: bool = False,
 ) -> None:
     """Logs training and testing metrics to WandB."""
     logs = {}
@@ -103,7 +103,7 @@ def log_training_and_test_metrics(
         )
 
     # 2. Test Metrics (Periodic)
-    if epoch % 10 == 0 and test_results is not None:
+    if log_test and test_results is not None:
         logs.update(
             {
                 "Min_cost": torch.mean(test_results["min_cost"]),
@@ -165,13 +165,14 @@ def calculate_curriculum_steps(step: int, config: Dict[str, Any]) -> int:
 
 
 def initialize_training_problem(
-    problem: CVRP, device: str, config: Dict[str, Any]
+    problem: CVRP, device: str, config: Dict[str, Any], epoch: int
 ) -> CVRP:
     """Regenerates the problem instance for the next training epoch."""
     if config["DATA"] == "uchoa":
         # Load structured instances
+        epoch_seed = config["SEED"] + epoch
         coords_list, demands_list, capacity_list, _ = P_generate_instances(
-            config["N_PROBLEMS"], random.randint(0, 1000000), config["PROBLEM_DIM"]
+            config["N_PROBLEMS"], epoch_seed, config["PROBLEM_DIM"]
         )
         coords, demands, capacity = stack_res(coords_list, demands_list, capacity_list)
         problem.generate_params(coords, demands.to(torch.int64), capacity)
@@ -339,7 +340,7 @@ def main(config: dict) -> None:
         f"Device: {device} | CUDA: {torch.cuda.get_device_name(0) if device == 'cuda' else 'N/A'}"
     )
 
-    setup_reproducibility(config["SEED"])
+    setup_reproducibility(config["SEED"], train=True)
     logger.info(f"Random Seed: {config['SEED']}")
 
     training_problem, input_dim = init_problem(
@@ -404,9 +405,13 @@ def main(config: dict) -> None:
 
     a_min_cost = current_test_loss.item()
 
+    save_period = 5
+
     for epoch in progress_bar:
         # A. Prepare Data
-        training_problem = initialize_training_problem(training_problem, device, config)
+        training_problem = initialize_training_problem(
+            training_problem, device, config, epoch
+        )
 
         # B. Run Training Step
         sa_results, train_stats, avg_actor_grad, avg_critic_grad, pre_step = train_ppo(
@@ -428,7 +433,7 @@ def main(config: dict) -> None:
 
         # D. Periodic Evaluation
         test_results = None
-        if epoch % 10 == 0 and epoch != 0:
+        if epoch % save_period == 0 and epoch != 0:
             test_results = test_model(
                 actor, test_problem, initial_test_solutions, config
             )
@@ -442,7 +447,7 @@ def main(config: dict) -> None:
                 )
 
         # E. Early Stopping Check
-        if epoch % 10 == 0:
+        if epoch % save_period == 0:
             if current_test_loss.item() >= best_loss_value:
                 early_stopping_counter += 1
             else:
@@ -465,13 +470,16 @@ def main(config: dict) -> None:
                 pre_step=pre_step,
                 early_stopping_counter=early_stopping_counter,
                 a_min_cost=a_min_cost,
-                test_results=test_results if (epoch >= 10) else initial_test_results,
+                test_results=test_results
+                if (epoch >= save_period)
+                else initial_test_results,
                 epoch=epoch,
                 config=config,
+                log_test=(epoch % save_period == 0 and epoch != 0),
             )
 
             # Save Checkpoint
-            if epoch % 10 == 0:
+            if epoch % save_period == 0:
                 WandbLogger.log_model(
                     save_func=save_model,
                     model=actor,
