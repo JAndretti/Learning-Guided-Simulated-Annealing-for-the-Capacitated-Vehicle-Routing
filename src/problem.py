@@ -22,6 +22,7 @@ from algo import (
     random_init_batch,
     swap,
     two_opt,
+    two_opt_star,
 )
 from utils import (
     calculate_client_angles,
@@ -145,7 +146,7 @@ class CVRP(Problem):
         """Selects the local search heuristic (swap, two_opt, insertion)."""
         heuristics_map = {
             "swap": swap,
-            "two_opt": two_opt,
+            "two_opt": self.apply_two_opt_split,
             "insertion": insertion,
         }
         self.heuristic = heuristics_map.get(heuristic_name)
@@ -573,6 +574,48 @@ class CVRP(Problem):
 
         return final_sol, valid
 
+    def _get_prefix_loads(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Computes load accumulated from the start of the route up to each node (head_load)
+        and load remaining from the node to the end of the route (tail_load).
+        """
+        # 1. Global cumulative sum
+        # global_cum = torch.cumsum(self.ordered_demands, dim=1)  # [B, N]
+
+        # 2. Find the cumulative sum value at the *start* of each segment
+        # We create a mapping where every node knows the cumsum value of the node
+        # immediately preceding its route.
+
+        # Create a mask for segment changes (where segment_id changes from prev)
+        # or simply scatter min/max.
+        # Approach: Gather the global_cum value at the index corresponding to the start of the segment.
+
+        # Efficient vectorized way to get 'start_value' per segment:
+        # Since segment_ids are monotonic, we can use scatter_reduce (PyTorch 1.11+)
+        # or simply use the fact that the depot (demand 0) resets the load.
+
+        # Simpler Matrix Approach (O(N^2) memory but safe for batches):
+        # Mask[b, i, j] = 1 if i and j in same segment and j <= i
+        same_segment = self.segment_ids.unsqueeze(2) == self.segment_ids.unsqueeze(1)
+        lower_tri = torch.tril(torch.ones_like(same_segment))
+        mask = same_segment * lower_tri
+
+        # Sum demands only within the active segment up to current node
+        head_load = (self.ordered_demands.unsqueeze(1) * mask).sum(dim=2)
+
+        # 3. Get total route loads to calculate tails
+        # We already have self._get_current_route_loads() but we need it mapped to every node
+        per_route_totals = self._get_current_route_loads()  # [B, num_routes]
+        total_segment_load = torch.gather(per_route_totals, 1, self.segment_ids)
+
+        # Tail load: The demand of the rest of the route *excluding* the current node
+        # (The current node is part of the 'Head' in 2-opt* logic usually,
+        # but let's define cut after index i)
+        # If we cut AFTER i: Head = [0...i], Tail = [i+1...End]
+        tail_load = total_segment_load - head_load
+
+        return head_load, tail_load
+
     def get_action_mask(
         self, solution: torch.Tensor, node_pos: torch.Tensor
     ) -> torch.Tensor:
@@ -583,123 +626,153 @@ class CVRP(Problem):
         batch_size, seq_len = self.segment_ids.shape
         node_pos_expanded = node_pos.unsqueeze(-1)  # [batch, 1]
 
-        # 1. Expand Route Loads to Sequence Length
-        # _get_current_route_loads gives [batch, num_routes].
-        # We gather this so every position knows the total load of the route it belongs to.
-        per_route_loads = self._get_current_route_loads()
-        target_route_loads = torch.gather(per_route_loads, 1, self.segment_ids)
+        # --- 1. Common Setup & Gathering ---
+        # Identify Routes
+        target_route_ids = self.segment_ids
+        source_route_id = torch.gather(target_route_ids, 1, node_pos_expanded)
 
-        # 2. Get Source Node Information (The node we are moving)
+        # Identify Source Validity
         source_demand = torch.gather(self.ordered_demands, 1, node_pos_expanded)
-        source_route_id = torch.gather(self.segment_ids, 1, node_pos_expanded)
-
-        # Check if source is valid (e.g., demand > 0 implies it's a customer, not depot/padding)
         is_source_valid = source_demand > 0
 
-        # 3. Compute Heuristic Mask
-        target_route_ids = self.segment_ids
+        # Base Condition: Intra-Route moves are generally valid across heuristics
+        # (Reordering within the same route doesn't change total route load)
+        is_intra = target_route_ids == source_route_id
+
+        # Initialize mask
         mask = torch.zeros(batch_size, seq_len, device=self.device, dtype=torch.bool)
 
-        if self.heuristic == insertion:
-            # Condition A: Intra-Route Move (Always Valid)
-            # Moving a node within its own route does not change the total load.
-            is_same_route = target_route_ids == source_route_id
+        # --- 2. Heuristic Specific Logic ---
 
-            # Condition B: Inter-Route Move (Capacity Check)
-            # If moving to a new route, check if (RouteLoad + NodeDemand) <= Capacity
+        if self.heuristic == insertion:
+            # Gather Load Info
+            per_route_loads = self._get_current_route_loads()
+            target_route_loads = torch.gather(per_route_loads, 1, target_route_ids)
+
+            # Capacity Check: Load + New Node <= Q
             potential_loads = target_route_loads + source_demand
             is_capacity_valid = potential_loads <= self.capacity
 
-            # Combine: Valid if (Same Route) OR (Fits Capacity)
-            mask = is_same_route | is_capacity_valid
+            # Combine: (Same Route) OR (Fits Capacity)
+            mask = is_intra | is_capacity_valid
 
-            # Rules:
-            # - Cannot insert after itself (no-op)
-            mask.scatter_(1, node_pos_expanded, False)
-            # - Cannot insert after the last token (terminator/padding)
+            # Constraint: Cannot insert after last token (padding/terminator)
             mask[:, -1] = False
 
         elif self.heuristic == swap:
-            # We need the load of the route the SOURCE node is currently in.
-            # source_route_load: [batch, 1]
+            # Gather Load Info
+            per_route_loads = self._get_current_route_loads()
+            target_route_loads = torch.gather(per_route_loads, 1, target_route_ids)
             source_route_load = torch.gather(per_route_loads, 1, source_route_id)
 
-            # Condition A: Intra-Route Move (Always Valid)
-            # Swapping two nodes in the same route doesn't change total load.
-            is_same_route = target_route_ids == source_route_id
+            # Capacity Check: Both routes must fit after swap
+            # New Source: Old_Source - Src_Node + Tgt_Node
+            new_source_load = source_route_load - source_demand + self.ordered_demands
+            # New Target: Old_Target - Tgt_Node + Src_Node
+            new_target_load = target_route_loads - self.ordered_demands + source_demand
 
-            # Condition B: Inter-Route Move (Capacity Check)
-            # We must check the feasibility of BOTH routes involved in the swap.
-
-            # 1. New Source Route Load = (Current Source Load) - (Source Node Demand) + (Target Node Demand)
-            new_source_route_load = (
-                source_route_load - source_demand + self.ordered_demands
+            is_capacity_valid = (new_source_load <= self.capacity) & (
+                new_target_load <= self.capacity
             )
 
-            # 2. New Target Route Load = (Current Target Load) - (Target Node Demand) + (Source Node Demand)
-            new_target_route_load = (
-                target_route_loads - self.ordered_demands + source_demand
-            )
-
-            is_capacity_valid = (new_source_route_load <= self.capacity) & (
-                new_target_route_load <= self.capacity
-            )
-
-            # ----------------------------------------------------------------
-            # 1. Standard Swap Mask (Customers Only)
-            # ----------------------------------------------------------------
-            # Valid if (Same Route OR Capacity Fits) AND (Target is a Customer)
-            standard_swap_mask = (is_same_route | is_capacity_valid) & (
+            # A. Standard Swap: (Same Route OR Fits Capacity) AND (Target is Customer)
+            standard_swap_mask = (is_intra | is_capacity_valid) & (
                 self.ordered_demands > 0
             )
 
-            # ----------------------------------------------------------------
-            # 2. New Route Creation (Triad Pattern [0, 0, 0])
-            # ----------------------------------------------------------------
-            # We want to select the MIDDLE zero in a sequence of [0, 0, 0].
+            # B. New Route Creation (Triad Pattern [0, 0, 0])
+            # Check neighbors for [Depot, Depot, Depot] pattern
+            is_depot = self.ordered_demands == 0
+            is_prev_depot = torch.roll(is_depot, shifts=1, dims=1)
+            is_prev_depot[:, 0] = False  # Fix roll wrap
+            is_next_depot = torch.roll(is_depot, shifts=-1, dims=1)
+            is_next_depot[:, -1] = False  # Fix roll wrap
 
-            # Check current node is depot
-            is_center_depot = self.ordered_demands == 0
+            new_route_mask = is_prev_depot & is_depot & is_next_depot
 
-            # Check previous node is depot (Shift right by 1)
-            prev_demands = torch.roll(self.ordered_demands, shifts=1, dims=1)
-            is_prev_depot = prev_demands == 0
-            # Fix roll wrap-around: First element cannot have a 'previous' in this logic
-            is_prev_depot[:, 0] = False
-
-            # Check next node is depot (Shift left by 1)
-            next_demands = torch.roll(self.ordered_demands, shifts=-1, dims=1)
-            is_next_depot = next_demands == 0
-            # Fix roll wrap-around: Last element cannot have a 'next' in this logic
-            is_next_depot[:, -1] = False
-
-            # The Pattern: [0, 0, 0] -> Select the middle one
-            new_route_mask = is_prev_depot & is_center_depot & is_next_depot
-
-            # ----------------------------------------------------------------
-            # 3. Combine Masks
-            # ----------------------------------------------------------------
-            # Allow move if it is a valid Standard Swap OR a Valid New Route creation
+            # Combine
             mask = standard_swap_mask | new_route_mask
 
-            # Rules:
-            # - Cannot swap with itself
-            mask.scatter_(1, node_pos_expanded, False)
+        elif self.heuristic == self.apply_two_opt_split:
+            # Gather Load Info (Prefix/Suffix)
+            head_loads, tail_loads = self._get_prefix_loads()
+            source_head = torch.gather(head_loads, 1, node_pos_expanded)
+            source_tail = torch.gather(tail_loads, 1, node_pos_expanded)
 
-        elif self.heuristic == two_opt:
-            raise NotImplementedError(f"{self.heuristic} not implemented in masking.")
+            # Intra-Route: Standard 2-Opt Reversal
+            # Constraint: Both Source and Target must be CUSTOMERS.
+            # If we include a Depot in the reversal, we break the Depot->C->C structure.
+            is_target_customer = self.ordered_demands > 0
+            is_same_route_customer = is_intra & is_target_customer
+
+            # Capacity Check (Tail Swap Logic)
+            # Route A: Source Head + Target Tail
+            # Route B: Target Head + Source Tail
+            new_load_a = source_head + tail_loads
+            new_load_b = head_loads + source_tail
+
+            is_capacity_valid = (new_load_a <= self.capacity) & (
+                new_load_b <= self.capacity
+            )
+
+            # Target can be Customer OR Depot (grafting onto a depot is valid)
+            is_inter = (~is_intra) & is_capacity_valid
+
+            mask = is_same_route_customer | is_inter
+
+            # Constraint: Remove immediate neighbors (Trivial moves)
+            prev_idx = (node_pos_expanded - 1).clamp(min=0)
+            next_idx = (node_pos_expanded + 1).clamp(max=seq_len - 1)
+            mask.scatter_(1, prev_idx, False)
+            mask.scatter_(1, next_idx, False)
+
+            # Constraint: Cannot interact with the padding at the end of sequence
+            mask[:, -1] = False
+
         else:
-            raise NotImplementedError("Unknown heuristic")
+            raise NotImplementedError(f"Unknown heuristic: {self.heuristic}")
 
-        # 4. Safety / Fallback (Force No-Op if trapped)
-        # If the source node is invalid (e.g. depot) OR no valid moves exist,
-        # we force the agent to select the node itself (No-Op).
+        # --- 3. Global Safety Constraints ---
 
+        # Rule: Cannot select itself (No-Op handled below, not here)
+        mask.scatter_(1, node_pos_expanded, False)
+
+        # Force No-Op if trapped
+        # (Source is invalid e.g. depot, OR no valid moves in mask)
         has_valid_moves = mask.any(dim=1, keepdim=True)
         force_no_op = (~is_source_valid) | (~has_valid_moves)
 
-        # Create a mask that only allows selecting the node itself
+        # Construct No-Op mask (Only allow selecting self)
         no_op_mask = torch.zeros_like(mask)
         no_op_mask.scatter_(1, node_pos_expanded, True)
 
         return torch.where(force_no_op, no_op_mask, mask)
+
+    def apply_two_opt_split(
+        self, solution: torch.Tensor, action: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Dispatches to standard 2-opt (intra) or 2-opt-star (inter).
+        """
+        u, v = action[:, 0], action[:, 1]
+
+        u_seg = self.segment_ids.gather(1, u.unsqueeze(1)).squeeze(1)
+        v_seg = self.segment_ids.gather(1, v.unsqueeze(1)).squeeze(1)
+
+        is_intra = u_seg == v_seg
+
+        # We must process the batch. Since we can't easily branch per-sample
+        # in a single tensor op without masking, we calculate both and blend.
+        # (Or execute purely based on indices if one function handled both,
+        # but the logic differs).
+
+        # 1. Apply Intra-Route (Standard Reversal)
+        sol_intra = two_opt(solution, action)
+
+        # 2. Apply Inter-Route (Tail Swap)
+        sol_inter = two_opt_star(solution, action, self.segment_ids)
+
+        # 3. Select based on mask
+        # Expand mask to [B, N, 1] to broadcast over solution nodes
+        mask = is_intra.view(-1, 1, 1)
+        return torch.where(mask, sol_intra, sol_inter)

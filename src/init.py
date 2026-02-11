@@ -90,7 +90,7 @@ def inf_test_model(
     config: Dict,
     baseline: bool = False,
     greedy: bool = False,
-) -> Dict[str, torch.Tensor | List[Any]]:
+) -> Dict[str, torch.Tensor]:
     """
     Test the trained model performance using Simulated Annealing with fast inference (less metrics etc..).
 

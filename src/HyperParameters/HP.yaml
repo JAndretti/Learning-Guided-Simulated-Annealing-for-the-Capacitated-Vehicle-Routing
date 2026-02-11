@@ -2,11 +2,11 @@
 PROJECT: "LGSA" # Project name
 GROUP: "" # Experimentation group
 COMMENT: ""
-LOG: False # Enable or disable logging with WandB
+LOG: True # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
-DEVICE: "mps" # Hardware used: cpu, cuda, or mps
+DEVICE: "cuda" # Hardware used: cpu, cuda, or mps
 SEED: 42 # Random seed for reproducibility
 
 # =============== CVRP Problem ===============

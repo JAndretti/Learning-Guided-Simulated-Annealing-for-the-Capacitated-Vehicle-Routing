@@ -1,8 +1,4 @@
-# ============================================================================
-# FAST SIMULATED ANNEALING INFERENCE
-# ============================================================================
-
-from typing import Any, Dict, List
+from typing import Dict, Tuple
 
 import torch
 from tqdm import tqdm
@@ -14,39 +10,128 @@ from utils import extend_to
 from .scheduler import Scheduler
 
 # ============================================================================
-# UTILITY FUNCTIONS (INLINED OR SIMPLIFIED)
+# UTILITY FUNCTIONS
 # ============================================================================
+
+
+def scale_between(
+    value: torch.Tensor, min_value: float, max_value: float
+) -> torch.Tensor:
+    return min_value + (max_value - min_value) * value
 
 
 def scale_to_unit(
     value: torch.Tensor, min_value: float, max_value: float
 ) -> torch.Tensor:
-    """Scales a [min, max] value to [0, 1] for the neural net input."""
     return (value - min_value) / (max_value - min_value)
+
+
+def normalize(
+    actual_improvement: torch.Tensor, initial_cost: torch.Tensor
+) -> torch.Tensor:
+    MAX_EXPECTED_REL_IMPROVEMENT = 0.2
+    relative_improvement = actual_improvement / initial_cost
+    return torch.clamp(relative_improvement / MAX_EXPECTED_REL_IMPROVEMENT, -1.0, 1.0)
+
+
+# ============================================================================
+# CORE LOGIC
+# ============================================================================
 
 
 def metropolis_accept(
     cost_improvement: torch.Tensor, current_temp: torch.Tensor, device: str
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Vectorized Metropolis-Hastings acceptance.
+    Standard Metropolis-Hastings acceptance.
     """
-    # Calculate acceptance probability: exp(gain / T)
-    # We clip at 1.0 because if gain > 0 (good move), exp is > 1
-    # Note: cost_improvement is (current - proposed), so positive means improvement.
-
-    acceptance_prob = torch.exp(cost_improvement / current_temp)
-    # Clamp is faster than minimum with ones_like in some kernels, but minimum is safe
-    acceptance_prob = torch.clamp(acceptance_prob, max=1.0)
-
+    acceptance_prob = torch.minimum(
+        torch.exp(cost_improvement / current_temp), torch.ones_like(cost_improvement)
+    )
     random_sample = torch.rand(acceptance_prob.shape, device=device)
     is_accepted = (random_sample < acceptance_prob).long()
 
-    return is_accepted
+    # Zero out improvement for rejected moves to avoid mixing calculation issues later
+    actual_improvement = cost_improvement * is_accepted
+    return is_accepted, actual_improvement
+
+
+def calculate_reward(
+    config: dict,
+    actual_improvement: torch.Tensor,
+    is_valid: torch.Tensor,
+    best_cost: torch.Tensor,
+    old_best_cost: torch.Tensor,
+    new_cost: torch.Tensor,
+    cumulative_cost: torch.Tensor,
+    initial_cost: torch.Tensor,
+    step: int,
+    last_step: bool = False,
+) -> torch.Tensor:
+    """
+    Calculates RL reward. Only called if training is active.
+    """
+    if config["METHOD"] != "ppo":
+        return torch.zeros_like(actual_improvement).view(-1, 1)
+
+    # 1. Weights
+    warmup_epochs = config.get("WARMUP_EPOCHS", 0)
+    if warmup_epochs > 0 and step < warmup_epochs:
+        target_weight = step / warmup_epochs
+        immediate_weight = 1.0 - target_weight
+    else:
+        target_weight = 1.0
+        immediate_weight = 0.0
+
+    # 2. Immediate
+    reward_immediate = torch.zeros_like(actual_improvement).view(-1, 1)
+    if immediate_weight > 0 or config["REWARD"] == "immediate":
+        val_imm = (
+            normalize(actual_improvement, initial_cost)
+            if config["NORMALIZE_REWARD"]
+            else actual_improvement
+        )
+        reward_immediate = torch.where(
+            ~is_valid.bool().squeeze(-1),
+            -1.5,
+            torch.where(actual_improvement == 0, 0.0, val_imm),
+        ).view(-1, 1)
+
+    # 3. Target
+    reward_target = torch.zeros_like(actual_improvement).view(-1, 1)
+    target_mode = config["REWARD"]
+
+    if target_mode == "dact":
+        current_step_min = torch.min(new_cost, old_best_cost)
+        raw_reward = old_best_cost - current_step_min
+        reward_target = torch.where(
+            is_valid.bool().view(-1, 1),
+            raw_reward.view(-1, 1),
+            torch.zeros_like(raw_reward).view(-1, 1),
+        ) * config.get("REWARD_SCALE", 10.0)
+    elif target_mode == "immediate":
+        reward_target = reward_immediate
+    elif target_mode == "min_cost":
+        reward_target = ((initial_cost + best_cost) / initial_cost).view(-1, 1)
+    elif target_mode == "primal":
+        reward_target = -cumulative_cost.view(-1, 1)
+
+    final_reward = (immediate_weight * reward_immediate) + (
+        target_weight * reward_target
+    )
+
+    if config["REWARD_VALID"]:
+        final_reward[~is_valid.view(-1, 1)] = -1.0
+    if config["REWARD_LAST"] and last_step:
+        final_reward = (
+            config["REWARD_LAST_SCALE"] * ((initial_cost - best_cost) / initial_cost)
+        ).view(-1, 1)
+
+    return final_reward
 
 
 # ============================================================================
-# MAIN INFERENCE LOOP
+# LIGHTWEIGHT 
 # ============================================================================
 
 
@@ -55,28 +140,23 @@ def sa_test(
     problem: CVRP,
     initial_solution: torch.Tensor,
     config: dict,
-    # Unused args kept for interface compatibility if needed, else remove
     baseline: bool = False,
-    random_std: float = 0.2,
+    random_std: float = 0.2,  # Kept for signature compatibility
     greedy: bool = False,
-    record_state: bool = False,
+    record_state: bool = False,  # Ignored in lightweight mode
     replay_buffer=None,
     train: bool = False,
     epoch: int = 0,
     device: str = "",
-    desc_tqdm: str = "SA Inference",
-) -> Dict[str, torch.Tensor | List[Any]]:
-    """
-    High-performance Simulated Annealing Inference Loop.
-    Strips out RL rewards, buffers, and logging to maximize throughput.
-    """
+    desc_tqdm: str = "Simulated Annealing Progress",
+) -> Dict[str, torch.Tensor]:
+
     if device == "":
         device = str(initial_solution.device)
 
-    # --- 1. SETUP ---
     total_steps = config["OUTER_STEPS"] if train else config["TEST_OUTER_STEPS"]
 
-    # Initialize Scheduler
+    # Scheduler
     scheduler = Scheduler(
         config["SCHEDULER"],
         T_max=config["INIT_TEMP"],
@@ -84,149 +164,181 @@ def sa_test(
         step_max=total_steps,
     )
 
-    # Initialize Tensors
-    batch_size = initial_solution.shape[0]
+    # --- Initialization (Minimal) ---
+    # We strip out the dictionary 'opt_state' to avoid dict lookup overhead in tight loops
+    # and keep variables strictly local.
 
-    # Best found so far
-    best_solution = initial_solution.clone()
-    best_cost = problem.cost(best_solution)
-
-    # Current state of the chain
     current_solution = initial_solution.clone()
-    current_cost = best_cost.clone()
+    best_solution = initial_solution.clone()
 
-    # Temperature management
-    current_temp = torch.full((batch_size,), config["INIT_TEMP"], device=device)
+    current_cost = problem.cost(initial_solution)
+    best_cost = current_cost.clone()
+    initial_cost = current_cost.clone()
 
-    # Pre-allocate tensor for advancement ratio (scalar that changes per step)
-    # We create the full schedule of temperatures in advance to avoid CPU-GPU sync inside loop
-    # (Optional optimization, strictly keeping your Scheduler logic here for safety)
+    # Needed only for specific reward calculations
+    cumulative_cost = (
+        torch.ones_like(best_cost)
+        if (replay_buffer is not None and config["REWARD"] == "primal")
+        else None
+    )
 
-    # --- 2. OPTIMIZATION LOOP ---
+    # Temperature Setup
+    current_temp = torch.tensor([1.0], device=device).repeat(current_cost.shape[0])
+    current_temp = scale_between(current_temp, config["STOP_TEMP"], config["INIT_TEMP"])
 
-    # torch.inference_mode() is highly recommended for inference-only loops
-    # It disables view tracking and version counters, faster than no_grad()
-    with torch.inference_mode():
-        # Initial State Construction
-        # We need to construct the first state before the loop
-        normalized_temp = scale_to_unit(
-            current_temp, config["STOP_TEMP"], config["INIT_TEMP"]
+    # Initial State
+    normalized_temp = scale_to_unit(
+        current_temp, config["STOP_TEMP"], config["INIT_TEMP"]
+    )
+    current_state = problem.to_state(
+        *problem.build_state_components(
+            current_solution,
+            normalized_temp,
+            torch.tensor(1.0, device=device),
         )
-        adv = torch.tensor(1.0, device=device)  # Initial progress = 1.0 (start)
+    ).to(device)
 
-        # Build state
-        state_components = problem.build_state_components(
-            current_solution, normalized_temp, adv
-        )
-        current_state = problem.to_state(*state_components)
+    # Loop
+    progress_bar = tqdm(
+        range(total_steps),
+        desc=("Train/ " if train else "Test/ ") + desc_tqdm,
+        colour="green",
+        leave=False,
+    )
 
-        progress_bar = tqdm(
-            range(total_steps),
-            desc=desc_tqdm,
-            colour="green",
-            leave=False,
-            disable=not config.get(
-                "VERBOSE", True
-            ),  # Option to silence tqdm for max speed
-        )
-
-        for step in progress_bar:
-            # A. Generate Action (Neural Proposal)
-            # We discard log_probs and masks since we don't train here
-            action, _, _ = actor.sample(current_state, greedy=greedy, problem=problem)
-
-            # B. Apply Action
-            # problem.from_state splits the big tensor back into useful components (coords, etc)
-            sol_components = problem.from_state(current_state)
-
-            # Proposed solution
-            proposed_sol, is_valid = problem.update(sol_components[0], action)
-            proposed_cost = problem.cost(proposed_sol)
-
-            # C. Evaluate (Metropolis)
-            cost_improvement = current_cost - proposed_cost
-
-            if config["METROPOLIS"]:
-                is_accepted = metropolis_accept(cost_improvement, current_temp, device)
+    for step in progress_bar:
+        # 1. Action
+        with torch.no_grad():
+            if baseline:
+                action, action_log_prob, mask = actor.baseline_sample(
+                    current_state, problem=problem
+                )
             else:
-                # Greedy / Hill Climbing mode
-                is_accepted = (cost_improvement >= 0).long()
-
-            # D. Update Current State
-            # current = accepted ? proposed : current
-            # We only update indices where is_accepted is True to save ops?
-            # Vectorized 'where' is usually faster than masking on GPU due to coherence.
-
-            # Update Cost
-            current_cost = (
-                is_accepted * proposed_cost + (1 - is_accepted) * current_cost
-            )
-
-            # Update Solution Tensor
-            # extend_to broadcasts the (B,) flag to (B, N, 1)
-            is_accepted_expanded = extend_to(is_accepted, current_solution)
-            current_solution = (
-                is_accepted_expanded * proposed_sol
-                + (1 - is_accepted_expanded) * sol_components[0]
-            ).long()
-
-            # Important: Sync problem internal state (demands, masks) to the new current solution
-            problem.update_tensor(current_solution)
-
-            # E. Update Best Found
-            is_improvement = current_cost < best_cost
-            if is_improvement.any():
-                best_cost = torch.minimum(current_cost, best_cost)
-                is_imp_expanded = extend_to(is_improvement.long(), best_solution)
-                best_solution = (
-                    is_imp_expanded * current_solution
-                    + (1 - is_imp_expanded) * best_solution
+                action, action_log_prob, mask = actor.sample(
+                    current_state, greedy=greedy, problem=problem
                 )
 
-            # F. Prepare Next Step (Temperature & State)
-            # Update Temperature
-            new_temp_scalar = scheduler.step(step)
-            current_temp.fill_(new_temp_scalar)  # In-place update is slightly faster
+        # 2. Update & Evaluate
+        sol_components, *_ = problem.from_state(current_state)
+        proposed_sol, is_valid = problem.update(sol_components, action)
+        proposed_cost = problem.cost(proposed_sol)
 
-            # Update State Inputs
-            # normalized temp for the network
-            norm_temp = scale_to_unit(
-                current_temp, config["STOP_TEMP"], config["INIT_TEMP"]
+        cost_improvement = current_cost - proposed_cost
+
+        # 3. Metropolis
+        if config["METROPOLIS"]:
+            is_accepted, actual_improvement = metropolis_accept(
+                cost_improvement, current_temp, device
             )
-            # progress ratio (decreases 1 -> 0)
-            adv = torch.tensor(1.0 - (step / total_steps), device=device)
+        else:
+            is_accepted = torch.ones_like(cost_improvement)
+            actual_improvement = cost_improvement
 
-            # Rebuild state tensor for next iteration
-            state_components = problem.build_state_components(
-                current_solution, norm_temp, adv
+        # 4. Update Current
+        # Update cost only where accepted
+        current_cost = is_accepted * proposed_cost + (1 - is_accepted) * current_cost
+
+        # Update solution only where accepted
+        is_accepted_expanded = extend_to(is_accepted, sol_components)
+        current_solution = (
+            is_accepted_expanded * proposed_sol
+            + (1 - is_accepted_expanded) * sol_components
+        ).long()
+
+        # Sync problem internal state
+        problem.update_tensor(current_solution)
+
+        # 5. Update Best
+        old_best_cost = (
+            best_cost.clone() if replay_buffer is not None else best_cost
+        )  # Optim: no clone if not needed for reward
+
+        # Check if current cost is better than global best
+        is_improvement = (current_cost < best_cost).long()
+
+        # Update best cost
+        best_cost = torch.minimum(current_cost, best_cost)
+
+        # Update best solution
+        is_imp_expanded = extend_to(is_improvement, current_solution)
+        best_solution = (
+            is_imp_expanded * current_solution + (1 - is_imp_expanded) * best_solution
+        )
+
+        if cumulative_cost is not None:
+            cumulative_cost += best_cost / initial_cost
+
+        # 6. Next Temperature & State
+        next_temp = scheduler.step(step).to(device).repeat(current_solution.shape[0])
+        current_temp = next_temp
+
+        adv = torch.tensor(1 - (step / total_steps), device=device)
+        model_temp = scale_to_unit(next_temp, config["STOP_TEMP"], config["INIT_TEMP"])
+
+        next_state = problem.to_state(
+            *problem.build_state_components(current_solution, model_temp, adv)
+        ).to(device)
+
+        # 7. RL Reward (Only calculate if we are training/buffering)
+        if replay_buffer is not None:
+            reward_signal = calculate_reward(
+                config,
+                actual_improvement,
+                is_valid,
+                best_cost,
+                old_best_cost,
+                current_cost,
+                cumulative_cost
+                if cumulative_cost is not None
+                else torch.zeros_like(best_cost),
+                initial_cost,
+                epoch,
+                step + 1 == total_steps,
             )
-            current_state = problem.to_state(*state_components)
 
-            # Clean Cache periodically if using CUDA to prevent fragmentation OOM on huge batches
-            # Only do this if strictly necessary as it slows down the loop
-            # if step % 100 == 0 and "cuda" in device:
-            #     torch.cuda.empty_cache()
+            replay_buffer.push(
+                current_state,
+                mask,
+                action,
+                next_state,
+                reward_signal,
+                action_log_prob,
+                config["GAMMA"],
+            )
 
-    # --- 3. RETURN RESULTS ---
+        # Move to next state
+        current_state = next_state.clone()
 
-    return {
+    # --- FINAL CLEANUP ---
+
+    # Handle last transition in replay buffer if training
+    if replay_buffer is not None and len(replay_buffer) > 0:
+        replay_buffer.push(*(list(replay_buffer.pop()[:-1]) + [0.0]))
+
+    # --- DUMMY RETURN ---
+    # Only best_x and min_cost are real. Others are None or Dummy.
+    results = {
         "best_x": best_solution,
         "min_cost": best_cost,
-        # We can return dummy values for others to avoid breaking external unpacking
-        "primal": best_cost,
+        # Dummies/Placeholders to prevent key errors in existing code
+        "primal": torch.tensor(0.0),
         "ngain": torch.tensor(0.0),
         "n_acc": torch.tensor(0.0),
         "n_rej": torch.tensor(0.0),
-        "distributions": [],
-        "is_valid": torch.tensor([]),
-        "states": [],
-        "actions": [],
-        "acceptance": [],
-        "costs": [],
-        "init_cost": torch.tensor(0.0),  # Calculate if needed, else 0
-        "reward": torch.tensor(0.0),
-        "all_rewards": torch.tensor(0.0),
-        "temperature": [],
+        "distributions": None,
+        "is_valid": None,
+        "states": None,
+        "actions": None,
+        "acceptance": None,
+        "costs": None,
+        "init_cost": initial_cost,
+        "reward": None,
+        "average_sum_rewards": torch.tensor(0.0),
+        "temperature": None,
         "best_step": torch.tensor(0.0),
-        "capacity_left": torch.tensor(0.0),
+        "capacity_left": None,
+        "ratio": 0.0,
+        "heuristic": None,
     }
+
+    return results

@@ -20,7 +20,7 @@ from func import (
     set_seed,
 )
 
-from init import initialize_models, initialize_test_problem, test_model
+from init import inf_test_model, initialize_models, initialize_test_problem
 from problem import CVRP
 from utils import setup_logging
 
@@ -252,7 +252,7 @@ def perform_test(
 
     # Using inf_test_model from init.py
     HP["TEST_OUTER_STEPS"] = HP["OUTER_STEPS"]
-    test = test_model(
+    test = inf_test_model(
         actor=actor,
         problem=problem,
         initial_solutions=init_x,
@@ -265,7 +265,7 @@ def perform_test(
     # Move tensors to CPU
     test = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in test.items()}
     init_cost = torch.mean(problem.cost(init_x))
-    final_cost = torch.mean(torch.tensor(test["min_cost"]))
+    final_cost = torch.mean(problem.cost(test["best_x"].to(problem.device)))
 
     # 5. Run Baseline (if enabled)
     if baseline:
@@ -276,7 +276,7 @@ def perform_test(
         start_time = time.time()
 
         # Using inf_test_model for baseline
-        test_baseline = test_model(
+        test_baseline = inf_test_model(
             actor=actor,
             problem=problem,
             initial_solutions=init_x,
@@ -292,7 +292,9 @@ def perform_test(
         }
 
         HP["OUTER_STEPS"] = step
-        final_cost_baseline = torch.mean(torch.tensor(test_baseline["min_cost"]))
+        final_cost_baseline = torch.mean(
+            problem.cost(test_baseline["best_x"].to(problem.device))
+        )
     else:
         final_cost_baseline = torch.tensor(float("nan"))
         execution_time_baseline = torch.tensor(float("nan"))

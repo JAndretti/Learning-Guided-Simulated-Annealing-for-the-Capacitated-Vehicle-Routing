@@ -69,16 +69,26 @@
 #   INIT: ["random"]
 #   METROPOLIS: [False]
 
-- GROUP: ["DATA"]
+# - GROUP: ["DATA"]
+#   REWARD: ["immediate"]
+#   MULTI_INIT: [False]
+#   MULTI_INIT_STEP: [0]
+#   CL: [False]
+#   CRITIC_MODEL: ["ff"]
+#   INIT: ["random"]
+#   DATA: ["uchoa"]
+#   NAZARI: [False]
+
+- GROUP: ["TWO_OPT"]
   REWARD: ["immediate"]
   MULTI_INIT: [False]
   MULTI_INIT_STEP: [0]
   CL: [False]
+  MAX_PROB_STEP: [0]
+  MAX_OUTER_STEPS_CL: [0]
   CRITIC_MODEL: ["ff"]
   INIT: ["random"]
-  DATA: ["uchoa"]
-  NAZARI: [False]
-
+  HEURISTIC: ["two_opt"]
 
 
 # # The Ablation Configurations

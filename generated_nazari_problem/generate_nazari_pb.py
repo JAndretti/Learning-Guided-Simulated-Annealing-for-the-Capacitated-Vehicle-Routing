@@ -1,5 +1,4 @@
 import torch
-
 from loguru import logger  # Enhanced logging capabilities
 
 # Remove default logger
@@ -20,7 +19,6 @@ DIM = [10, 20, 50, 100, 500, 1000]
 device = "cpu"
 
 for dim in DIM:
-
     # Generate coordinates (depot + customers)
     coordinates = torch.rand(N_PROBLEMS, dim + 1, 2, device=device)
 
@@ -33,7 +31,7 @@ for dim in DIM:
     )
     demands[:, 0] = 0
     # Set capacity for all problems
-    dict_capacity = {20: 30, 50: 40, 100: 50, 500: 50, 1000: 50}
+    dict_capacity = {10: 20, 20: 30, 50: 40, 100: 50, 500: 50, 1000: 50}
     capacity = dict_capacity.get(dim, 50)
     capacities = torch.full((N_PROBLEMS, 1), capacity, device=device)
     output_path = f"generated_nazari_problem/gen_nazari_{dim}.pt"

@@ -54,6 +54,99 @@ def two_opt(x: torch.Tensor, a: torch.Tensor):
     return torch.gather(x, 1, idx.unsqueeze(-1))
 
 
+def two_opt_star(
+    x: torch.Tensor, a: torch.Tensor, segment_ids: torch.Tensor
+) -> torch.Tensor:
+    """
+    Performs 2-Opt* (Inter-Route Tail Swap).
+    Swaps the tails (all nodes after the selected index) between two routes.
+    """
+    batch_size, seq_len = x.size(0), x.size(1)
+
+    # Extract indices u (source) and v (target)
+    u_idx = a[:, 0]  # [B]
+    v_idx = a[:, 1]  # [B]
+
+    # We need to build the new sequence.
+    # Constructing a mask to reorder is tricky because tail lengths vary.
+    # We will build the new tensor by gathering.
+
+    range_idx = (
+        torch.arange(seq_len, device=x.device).unsqueeze(0).expand(batch_size, -1)
+    )
+
+    # Identify segments
+    u_seg = segment_ids.gather(1, u_idx.unsqueeze(1))
+    v_seg = segment_ids.gather(1, v_idx.unsqueeze(1))
+
+    current_seg_ids = segment_ids
+
+    # Define masks for the four parts involved in the swap:
+    # Route U Head: segment == u_seg AND index <= u
+    # Route U Tail: segment == u_seg AND index > u
+    # Route V Head: segment == v_seg AND index <= v
+    # Route V Tail: segment == v_seg AND index > v
+
+    is_u_seg = current_seg_ids == u_seg
+    is_v_seg = current_seg_ids == v_seg
+
+    u_head_mask = is_u_seg & (range_idx <= u_idx.unsqueeze(1))
+    u_tail_mask = is_u_seg & (range_idx > u_idx.unsqueeze(1))
+    v_head_mask = is_v_seg & (range_idx <= v_idx.unsqueeze(1))
+    v_tail_mask = is_v_seg & (range_idx > v_idx.unsqueeze(1))
+
+    # Everything else stays in place
+    keep_mask = ~(is_u_seg | is_v_seg)
+
+    # We need to construct the new order.
+    # The new Route U will contain: U_Head -> V_Tail
+    # The new Route V will contain: V_Head -> U_Tail
+    # However, simply masking isn't enough; we need to shift indices because
+    # the lengths of U_Tail and V_Tail might differ.
+
+    # Solution: Sort/argsort based on a constructed priority key.
+    # 1. Keepers: Original Index
+    # 2. U_Head: Original Index
+    # 3. V_Tail: Moves to where U_Tail was.
+    # 4. V_Head: Original Index
+    # 5. U_Tail: Moves to where V_Tail was.
+
+    # To simplify implementation in a rigid tensor:
+    # We assign a floating point 'position' to every node.
+    # - Standard nodes: pos = index
+    # - V_Tail nodes: Should come immediately after U_Head.
+    #   Let's map them to range (u_idx, u_idx + 1).
+    # - U_Tail nodes: Should come immediately after V_Head.
+    #   Let's map them to range (v_idx, v_idx + 1).
+
+    new_pos = range_idx.float()
+
+    # Compress V_Tail to fit after U
+    # We spread the indices of V_tail between u and u+1
+    # Normalized offset = (index - v_idx) / (seq_len)
+    v_tail_indices = torch.where(v_tail_mask, range_idx, torch.zeros_like(range_idx))
+    # We need them sorted relative to each other, but placed after u
+    # New Pos = u_idx + 0.1 + (original_index * small_epsilon)
+    new_pos = torch.where(
+        v_tail_mask,
+        u_idx.unsqueeze(1).float() + 0.1 + (range_idx.float() * 1e-5),
+        new_pos,
+    )
+
+    # Compress U_Tail to fit after V
+    new_pos = torch.where(
+        u_tail_mask,
+        v_idx.unsqueeze(1).float() + 0.1 + (range_idx.float() * 1e-5),
+        new_pos,
+    )
+
+    # Get the sort order to rearrange the tensor
+    _, sort_indices = torch.sort(new_pos, dim=1)
+
+    # Gather the new solution
+    return torch.gather(x, 1, sort_indices.unsqueeze(-1))
+
+
 def insertion(solution: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
     """
     Performs the insertion operator for CVRP.

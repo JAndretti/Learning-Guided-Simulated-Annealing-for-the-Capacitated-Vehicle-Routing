@@ -11,7 +11,6 @@ import vrplib
 from tqdm import tqdm
 
 # --- Project Imports ---
-# Adjust this path if your 'src' folder is located elsewhere relative to this script
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from func import (
@@ -39,9 +38,7 @@ parser.add_argument(
     "--OUTER_STEPS", type=int, default=1000, help="Number of steps for LGSA"
 )
 parser.add_argument("--seed", type=int, default=1234, help="Random seed")
-parser.add_argument(
-    "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
-)
+parser.add_argument("--device", type=str, default="cpu")
 
 args = parser.parse_args()
 
@@ -139,7 +136,6 @@ def solve_instance(model_name, instance_path, global_config):
 
     # !! CRITICAL ADAPTATION !!
     # We must construct a 'problem' object that holds this specific instance's data.
-    # Since we can't see your Problem class, we instantiate it and inject data.
     problem = CVRP(
         dim=N_nodes - 1,
         n_problems=1,
@@ -189,7 +185,6 @@ def solve_instance(model_name, instance_path, global_config):
     duration = time.time() - start_time
 
     # 6. Extract Solution and Calculate Real Cost
-    # 'best_x' is likely a tensor of shape (1, Sequence_Length) or (1, N)
     best_solution_tensor = results["best_x"].squeeze(0).cpu().numpy()
 
     # Calculate cost using REAL coordinates and CVRPLib rounding

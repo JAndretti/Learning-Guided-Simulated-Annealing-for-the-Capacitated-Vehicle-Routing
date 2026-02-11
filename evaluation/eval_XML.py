@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import time
+
 import glob2
 import numpy as np
 import pandas as pd
@@ -108,18 +109,13 @@ def solve_batch(model_name, instance_files, global_config):
         denom[denom == 0] = 1.0
         norm_coords = (coords_tensor - min_xy) / denom
 
-        # Normalize Demand
-        norm_demand = (
-            torch.tensor(data["demand"], dtype=torch.float32) / data["capacity"]
-        )
-
         batch_data.append(
             {
                 "name": instance_name,
                 "opt_cost": opt_cost,
                 "norm_coords": norm_coords,
-                "norm_demand": norm_demand,
                 "raw_coords": data["node_coord"],
+                "raw_demand": torch.tensor(data["demand"]),
                 "capacity": data["capacity"],
             }
         )
@@ -127,7 +123,7 @@ def solve_batch(model_name, instance_files, global_config):
     # Stack into Batch Tensors
     # Shape: (Batch_Size, N_Nodes, 2)
     batch_coords = torch.stack([b["norm_coords"] for b in batch_data]).to(args.device)
-    batch_demands = torch.stack([b["norm_demand"] for b in batch_data]).to(args.device)
+    batch_demands = torch.stack([b["raw_demand"] for b in batch_data]).to(args.device)
 
     # Capacity is implicitly 1.0 in normalized space, but we pass raw capacity for the Problem class
     batch_raw_capacity = (
