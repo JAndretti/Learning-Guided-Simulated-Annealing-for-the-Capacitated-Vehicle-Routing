@@ -36,7 +36,9 @@ profiling/
 
 # Res files
 /res/**
-!/res/Vrp-Set-XML100_res.csv
+!/res/BEST
+!/res/BEST/all_models_combined.csv
+
 
 # Generated problem file
 generated_nazari_problem/**
