@@ -40,7 +40,7 @@ def set_seed(seed=0):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    
+
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
@@ -64,7 +64,11 @@ def load_model(model: torch.nn.Module, folder: str, special_key: str = "") -> SA
     if files:
         best_file = min(files, key=extract_loss)
         model.load_state_dict(
-            torch.load(os.path.join(folder, best_file), weights_only=True)
+            torch.load(
+                os.path.join(folder, best_file),
+                weights_only=True,
+                map_location=torch.device("cpu"),
+            )
         )
     return model
 
