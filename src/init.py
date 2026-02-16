@@ -240,7 +240,6 @@ def initialize_models(
             c=entry,
             num_hidden_layers=num_h_layers,
             device=device,
-            mixed_heuristic=use_mixed_heuristic,
             method=update_method,
         )
     else:

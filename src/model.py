@@ -334,14 +334,12 @@ class CVRPActor(SAModel):
         c: int = 13,
         num_hidden_layers: int = 2,
         device: str = "cpu",
-        mixed_heuristic: bool = False,
         method: str = "free",
     ) -> None:
         super().__init__(device)
-        self.mixed_heuristic = mixed_heuristic
         self.c1_state_dim = c
         self.method = method
-        self.c2_state_dim = c * 2 if mixed_heuristic else c * 2 - 2
+        self.c2_state_dim = c * 2 - 2
 
         self.city1_net = create_network(
             self.c1_state_dim,
@@ -428,41 +426,34 @@ class CVRPActor(SAModel):
     ) -> Tuple[torch.Tensor, None, torch.Tensor]:
         """Generate baseline sample using uniform probabilities."""
         n_problems, problem_dim, _ = state.shape
-        x = state[:, :, 0]
-        mask = x.squeeze(-1) != 0
-        # Sample c1 at random
-        if self.method == "rm_depot":
-            x = x[mask].view(n_problems, -1)
-            logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
-        else:
-            logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
-            logits[~mask] = -float("inf")  # Mask logits where x == 0
+
+        x = state[:, :, :1]
+        logits = torch.ones(n_problems, problem_dim).to(self.generator.device)
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        if self.method != "rm_depot":
+            tmp_mask = (x != 0).squeeze(-1)
+            logits[~tmp_mask] = -float("inf")
+            mask = tmp_mask
+            # Mask first and last logits
+            logits[:, 0] = -float("inf")
+            logits[:, -1] = -float("inf")
         c1, _ = self.sample_from_logits(logits, one_hot=False)
 
         # sample c2
-        if self.mixed_heuristic:
-            logits = torch.ones(n_problems, x.shape[1] * 2).to(self.generator.device)
-            c2, _ = self.sample_from_logits(logits, one_hot=False)
-            heuristic_idx = c2 % 2
-            action = torch.cat(
-                [
-                    c1.view(-1, 1).long(),
-                    c2.view(-1, 1).long(),
-                    heuristic_idx.view(-1, 1).long(),
-                ],
-                dim=-1,
-            )
+
+        logits = torch.ones(n_problems, problem_dim).to(self.generator.device)
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        if self.method == "valid":
+            mask = problem.get_action_mask(solution=x, node_pos=c1)
+            logits[~mask] = -float("inf")  # Mask invalid actions
         else:
-            logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
-            mask = torch.ones_like(logits, dtype=torch.bool)
-            if self.method == "valid":
-                mask = problem.get_action_mask(x.unsqueeze(-1), c1)
-                logits[~mask] = -float("inf")  # Mask invalid actions
-            else:
-                arange = torch.arange(n_problems).to(logits.device)
-                logits[arange, c1] = -float("inf")
-            c2, _ = self.sample_from_logits(logits, one_hot=False)
-            action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
+            arange = torch.arange(n_problems).to(logits.device)
+            logits[arange, c1] = -float("inf")
+            # Mask first and last logits
+            logits[:, 0] = -float("inf")
+            logits[:, -1] = -float("inf")
+        c2, _ = self.sample_from_logits(logits, one_hot=False)
+        action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
         return action, None, mask
 
     def sample(
@@ -472,9 +463,15 @@ class CVRPActor(SAModel):
         c1_state, n_problems, x = self._prepare_features_city1(state)
 
         logits = self.city1_net(c1_state)[..., 0]
+        mask = torch.ones_like(logits, dtype=torch.bool)
         if self.method != "rm_depot":
-            mask = (x != 0).squeeze(-1)
-            logits[~mask] = -float("inf")  # Mask logits where x == 0
+            tmp_mask = (x != 0).squeeze(-1)
+            logits[~tmp_mask] = -float("inf")
+            mask = tmp_mask
+
+            # Mask first and last logits
+            logits[:, 0] = -float("inf")
+            logits[:, -1] = -float("inf")
 
         c1, log_probs_c1 = self.sample_from_logits(logits, greedy=greedy, one_hot=False)
 
@@ -491,24 +488,15 @@ class CVRPActor(SAModel):
         else:
             arange = torch.arange(n_problems).to(logits.device)
             logits[arange, c1] = -float("inf")
+            if self.method == "free":
+                # Mask first and last logits
+                logits[:, 0] = -float("inf")
+                logits[:, -1] = -float("inf")
 
         c2, log_probs_c2 = self.sample_from_logits(logits, greedy=greedy, one_hot=False)
 
-        # Construct action and log-probabilities
-        if self.mixed_heuristic:
-            c2_idx = c2 // 2  # Index of the pair
-            heuristic_idx = c2 % 2  # Index of the heuristic
-            action = torch.cat(
-                [
-                    c1.view(-1, 1).long(),
-                    c2_idx.view(-1, 1).long(),
-                    heuristic_idx.view(-1, 1).long(),
-                ],
-                dim=-1,
-            )
-        else:
-            # Concatenate c1 and c2
-            action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
+        # Concatenate c1 and c2
+        action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
 
         log_probs = log_probs_c1 + log_probs_c2
         return action, log_probs[..., 0], mask
@@ -537,14 +525,7 @@ class CVRPActor(SAModel):
         # Extract the specific actions the agent took previously
         # We need these to calculate how "likely" those specific moves were.
         taken_c1 = action[:, 0]
-
-        if self.mixed_heuristic:
-            # Handle special mixed heuristic action space
-            c2_idx = action[:, 1]
-            heuristic_idx = action[:, 2]
-            taken_c2 = c2_idx * 2 + heuristic_idx
-        else:
-            taken_c2 = action[:, 1]
+        taken_c2 = action[:, 1]
 
         # =========================================================================
         # PART 2: CITY 1 (First Decision)
@@ -563,6 +544,11 @@ class CVRPActor(SAModel):
             # Set invalid actions to negative infinity so Softmax makes them 0.0
             logits_c1[~tmp_mask] = -float("inf")
             valid_mask_c1 = tmp_mask
+            # Mask first and last logits
+            logits_c1[:, 0] = -float("inf")
+            logits_c1[:, -1] = -float("inf")
+            valid_mask_c1[:, 0] = False
+            valid_mask_c1[:, -1] = False
 
         # 3. Probabilities: Convert scores to probabilities (0.0 to 1.0)
         # We compute log_softmax for numerical stability in loss calculations
@@ -603,9 +589,15 @@ class CVRPActor(SAModel):
             valid_mask_c2 = mask
         else:
             # Simple masking: Just prevent picking the same city again (taken_c1)
-            arange = torch.arange(n_problems, device=logits_c2.device)
+            arange = torch.arange(n_problems).to(logits_c2.device)
             logits_c2[arange, taken_c1] = -float("inf")
             valid_mask_c2[arange, taken_c1] = False
+            # Mask first and last logits
+            if self.method == "free":
+                logits_c2[:, 0] = -float("inf")
+                logits_c2[:, -1] = -float("inf")
+                valid_mask_c2[:, 0] = False
+                valid_mask_c2[:, -1] = False
 
         # 3. Probabilities
         probs_c2 = torch.softmax(logits_c2, dim=-1)
@@ -616,6 +608,9 @@ class CVRPActor(SAModel):
         p_log_p_c2[valid_mask_c2] = (
             probs_c2[valid_mask_c2] * log_probs_all_c2[valid_mask_c2]
         )
+        # Safety check
+        p_log_p_c2 = torch.nan_to_num(p_log_p_c2, nan=0.0)
+
         entropy_c2 = -p_log_p_c2.sum(dim=-1)
 
         # 5. Retrieve Log-Prob for the SPECIFIC action taken
@@ -661,18 +656,6 @@ class CVRPActor(SAModel):
         base = repeat_to(base, c1_state)
         c1_state = c1_state[:, :, :-2]
         c2_state = torch.cat([base, c1_state], -1)
-        if self.mixed_heuristic:
-            # Duplicate each pair for both heuristic options
-            n_row = c2_state.shape[1]
-            c2_state = c2_state.repeat_interleave(2, dim=1)
-
-            # Add one-hot encoding for heuristic selection
-            heuristic_indices = torch.arange(2, device=c1_state.device).repeat(n_row)
-            heuristic_one_hot = F.one_hot(heuristic_indices, num_classes=2).repeat(
-                n_problems, 1, 1
-            )
-            # Concatenate the one-hot encoding to the features
-            c2_state = torch.cat([c2_state, heuristic_one_hot], dim=-1)
         return c2_state
 
 

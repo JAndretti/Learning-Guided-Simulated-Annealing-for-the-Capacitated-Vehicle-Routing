@@ -12,7 +12,13 @@ from .replay import ReplayBuffer, Transition
 
 logger = setup_logging()
 
-DEVICE = setup_device("cuda")
+DEVICE = setup_device(
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+)
 logger.info(f"PPO epochs will use device: {DEVICE}")
 
 

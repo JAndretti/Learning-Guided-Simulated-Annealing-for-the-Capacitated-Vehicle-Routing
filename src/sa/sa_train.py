@@ -282,12 +282,6 @@ def sa_train(
         if "cuda" in device:
             torch.cuda.empty_cache()
 
-        # 2. Heuristic Handling (Mix Mode)
-        if config["HEURISTIC"] == "mix":
-            h_act = sum(action[:, 2])
-            tracking["ratio"] += h_act / len(action[:, 2])
-            tracking["heuristic_choice"].append(h_act)
-
         if record_state:
             tracking["action_distributions"].append(
                 actor.get_logits(current_state, action, problem=problem)

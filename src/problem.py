@@ -563,13 +563,17 @@ class CVRP(Problem):
             sol = self.apply_heuristic(solution, action).long()
 
         # Feasibility Check
-        new_demands = self.get_demands(sol)
-        valid = is_feasible(sol, new_demands, self.capacity).unsqueeze(-1).long()
+        valid = torch.ones(sol.size(0), device=self.device, dtype=torch.bool).unsqueeze(
+            -1
+        )
+        if self.params.get("UPDATE_METHOD") == "free":
+            new_demands = self.get_demands(sol)
+            valid = is_feasible(sol, new_demands, self.capacity).unsqueeze(-1).long()
 
-        if not valid.all():
-            print("Warning: Some modified solutions are infeasible.")
+            if not valid.all() and not self.params.get("UPDATE_METHOD") == "free":
+                print("Warning: Some modified solutions are infeasible.")
 
-        # Revert invalid moves
+            # Revert invalid moves
         final_sol = torch.where(valid.unsqueeze(-1) == 1, sol, solution).to(torch.int64)
 
         return final_sol, valid
