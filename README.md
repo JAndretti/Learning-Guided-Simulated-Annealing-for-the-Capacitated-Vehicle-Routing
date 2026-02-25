@@ -15,6 +15,9 @@ Here is a visual comparison of different initialization strategies versus the op
 | :---: | :---: | :---: |
 | ![Initial Solution Random](example/plots/instance_3_init.png) | ![Initial Solution Nearest](example/plots/instance_3_init_nearest.png) | ![Optimized Solution](example/plots/instance_3.png) |
 
+Here is an example of the step-by-step improvement of the solution by the LGSA : 
+![Step-by-step improvement](example/plots/cvrp_evolution.gif)
+
 ### Key Features
 
   * **Hybrid Optimization**: Integrates the Metropolis acceptance criterion of Simulated Annealing with a learnable neural proposal distribution.

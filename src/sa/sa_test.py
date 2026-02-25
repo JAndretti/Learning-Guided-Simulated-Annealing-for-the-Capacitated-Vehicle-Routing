@@ -131,7 +131,7 @@ def calculate_reward(
 
 
 # ============================================================================
-# LIGHTWEIGHT 
+# LIGHTWEIGHT
 # ============================================================================
 
 
@@ -190,13 +190,16 @@ def sa_test(
     normalized_temp = scale_to_unit(
         current_temp, config["STOP_TEMP"], config["INIT_TEMP"]
     )
-    current_state = problem.to_state(
-        *problem.build_state_components(
-            current_solution,
-            normalized_temp,
-            torch.tensor(1.0, device=device),
-        )
-    ).to(device)
+    if baseline:
+        current_state = current_solution
+    else:
+        current_state = problem.to_state(
+            *problem.build_state_components(
+                current_solution,
+                normalized_temp,
+                torch.tensor(1.0, device=device),
+            )
+        ).to(device)
 
     # Loop
     progress_bar = tqdm(
@@ -274,10 +277,12 @@ def sa_test(
 
         adv = torch.tensor(1 - (step / total_steps), device=device)
         model_temp = scale_to_unit(next_temp, config["STOP_TEMP"], config["INIT_TEMP"])
-
-        next_state = problem.to_state(
-            *problem.build_state_components(current_solution, model_temp, adv)
-        ).to(device)
+        if baseline:
+            next_state = current_solution
+        else:
+            next_state = problem.to_state(
+                *problem.build_state_components(current_solution, model_temp, adv)
+            ).to(device)
 
         # 7. RL Reward (Only calculate if we are training/buffering)
         if replay_buffer is not None:

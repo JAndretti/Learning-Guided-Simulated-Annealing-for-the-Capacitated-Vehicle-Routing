@@ -436,33 +436,19 @@ class CVRPActor(SAModel):
             logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
         else:
             logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
-            logits[~mask] = -float("inf")  # Mask logits where x == 0
         c1, _ = self.sample_from_logits(logits, one_hot=False)
 
-        # sample c2
-        if self.mixed_heuristic:
-            logits = torch.ones(n_problems, x.shape[1] * 2).to(self.generator.device)
-            c2, _ = self.sample_from_logits(logits, one_hot=False)
-            heuristic_idx = c2 % 2
-            action = torch.cat(
-                [
-                    c1.view(-1, 1).long(),
-                    c2.view(-1, 1).long(),
-                    heuristic_idx.view(-1, 1).long(),
-                ],
-                dim=-1,
-            )
+
+        logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        if self.method == "valid":
+            mask = problem.get_action_mask(x.unsqueeze(-1), c1)
+            logits[~mask] = -float("inf")  # Mask invalid actions
         else:
-            logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
-            mask = torch.ones_like(logits, dtype=torch.bool)
-            if self.method == "valid":
-                mask = problem.get_action_mask(x.unsqueeze(-1), c1)
-                logits[~mask] = -float("inf")  # Mask invalid actions
-            else:
-                arange = torch.arange(n_problems).to(logits.device)
-                logits[arange, c1] = -float("inf")
-            c2, _ = self.sample_from_logits(logits, one_hot=False)
-            action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
+            arange = torch.arange(n_problems).to(logits.device)
+            logits[arange, c1] = -float("inf")
+        c2, _ = self.sample_from_logits(logits, one_hot=False)
+        action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
         return action, None, mask
 
     def sample(

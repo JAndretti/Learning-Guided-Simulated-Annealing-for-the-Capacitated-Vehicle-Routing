@@ -106,9 +106,7 @@ class Problem(ABC):
 
     def from_state(self, state: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """Splits the state tensor back into its components."""
-        num_extra_features = state.shape[-1] - 3  # Adjust based on dynamic features
-        split_sizes = [1, 2] + [1] * num_extra_features
-        return tuple(torch.split(state, split_sizes, dim=-1))
+        return state[:, :, 0].unsqueeze(-1), state[:, :, 1:]
 
 
 # ============================================================================
@@ -177,12 +175,9 @@ class CVRP(Problem):
             self.angles = calculate_client_angles(self.coords)
             self.matrix = calculate_distance_matrix(self.coords)
             self.isolation_score = calculate_knn_isolation(self.matrix, k=5)
-
-            (
-                self.mean_dist_10,
-                self.mean_dist_50,
-                self.density_ratio,
-            ) = self._calculate_density_features(self.matrix)
+            self.mean_dist_10 = calculate_knn_isolation(self.matrix, k=self.dim // 10)
+            self.mean_dist_33 = calculate_knn_isolation(self.matrix, k=self.dim // 3)
+            self.density_ratio = self.mean_dist_10 / (self.mean_dist_33 + 1e-8)
 
             # Normalize distances from depot [0, 1]
             self.dist_to_depot = self.matrix[:, 0, 0:]
@@ -195,9 +190,6 @@ class CVRP(Problem):
 
             self.depot_coords = self.coords[:, 0, :].unsqueeze(1)
             self.demand_normalized = (self.demands / self.capacity).unsqueeze(-1)
-            # self.ref_cost = torch.mean(self.cost(INIT_METHODS["nearest_neighbor"](self))).to(
-            #     self.device
-            # )
 
     def generate_params(
         self, coords: torch.Tensor, demands: torch.Tensor, capacities: torch.Tensor
@@ -228,9 +220,8 @@ class CVRP(Problem):
             "static": 7,  # x, y, th, d, is_depot, q/Q, knn
             "topology": 4,  # prev_x, prev_y, next_x, next_y
             "density10": 1,  # mean_dist_10
-            "density50": 1,  # mean_dist_50
+            "density33": 1,  # mean_dist_33
             "density_ratio": 1,  # density_ratio
-            # "gap_ref": 1,
             "detour": 1,
             "centroid": 1,
             "route_cost": 1,
@@ -240,39 +231,6 @@ class CVRP(Problem):
             "meta": 2,  # temp, progress
         }
         return sum(dims[k] for k, v in self.feature_flags.items() if v)
-
-    def _calculate_density_features(
-        self, matrix: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Computes the mean distance of the 10% and 50% closest nodes, and their ratio.
-        Returns: (mean_dist_10, mean_dist_50, density_ratio)
-        """
-        num_nodes = matrix.size(-1)
-
-        # Determine k for 10% and 50%
-        # We enforce max(1, ...) to handle very small problem sizes safely
-        k_10 = max(1, int(num_nodes * 0.10))
-        k_50 = max(1, int(num_nodes * 0.50))
-
-        # Retrieve the smallest distances.
-        # We fetch k_50 + 1 because the 0th element is the node itself (dist=0).
-        # largest=False ensures we get the smallest distances.
-        top_vals, _ = torch.topk(matrix, k=k_50 + 1, dim=-1, largest=False, sorted=True)
-
-        # Slice to exclude the node itself (column 0, which is 0.0)
-        closest_50_block = top_vals[:, :, 1:]
-
-        # Calculate Mean Distance to closest 50%
-        mean_dist_50 = closest_50_block.mean(dim=-1, keepdim=True)
-
-        # Calculate Mean Distance to closest 10% (slice the already sorted block)
-        mean_dist_10 = closest_50_block[:, :, :k_10].mean(dim=-1, keepdim=True)
-
-        # Calculate Ratio (add epsilon to avoid division by zero)
-        density_ratio = mean_dist_10 / torch.clamp(mean_dist_50, min=1e-8)
-
-        return mean_dist_10, mean_dist_50, density_ratio
 
     def get_distance_to_centroid(self, solution: torch.Tensor) -> torch.Tensor:
         """Computes distance of each node to its route's center of gravity."""
@@ -341,21 +299,11 @@ class CVRP(Problem):
             components.append(torch.roll(padded_coords, shifts=1, dims=1))  # Prev
             components.append(torch.roll(padded_coords, shifts=-1, dims=1))  # Next
 
-        # if flags.get("gap_ref", False):
-        #     current_cost = self.cost(x).unsqueeze(-1)
-
-        #     # Normalized Gap
-        #     # > 0 : Worse than baseline
-        #     # 0   : Equal to baseline
-        #     # < 0 : Better than baseline
-        #     gap = (current_cost - self.ref_cost) / self.ref_cost
-        #     components.append(gap)
-
         # 3. Density Features
         if flags.get("density10", False):  # Defaults to True if you want them always on
             components.append(self.mean_dist_10.gather(1, x))
-        if flags.get("density50", False):
-            components.append(self.mean_dist_50.gather(1, x))
+        if flags.get("density33", False):
+            components.append(self.mean_dist_33.gather(1, x))
         if flags.get("density_ratio", False):
             components.append(self.density_ratio.gather(1, x))
 

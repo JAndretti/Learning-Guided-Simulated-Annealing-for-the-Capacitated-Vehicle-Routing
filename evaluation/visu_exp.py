@@ -18,6 +18,8 @@ from rich import print
 
 # Add src path to PYTHONPATH
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+import os
+
 from algo import test_or_tools
 from init import init_problem
 from model import CVRPActor, CVRPActorPairs
@@ -26,18 +28,18 @@ from utils import is_feasible, plot_vehicle_routes, prepare_plot
 
 # --- Configurations ---
 
-MODEL_NAME = "20260105_190705_zigc6pg8"
+MODEL_NAME = "20260129_224725_x2uj6g8k"
 MODEL_DIR = glob(os.path.join("wandb", "LGSA", "*", "models", MODEL_NAME))[0]
-SEED = 0
+SEED = 2
 
 cfg = {
-    "PROBLEM_DIM": 100,
-    "MAX_LOAD": 50,
+    "PROBLEM_DIM": 50,
+    "MAX_LOAD": 40,
     "N_PROBLEMS": 1,
     "TEST_OUTER_STEPS": 1000,
     "DEVICE": "cpu",
-    "INIT": "sweep",
-    "SEED": 1,
+    "INIT": "random",
+    "SEED": SEED,
     "LOAD_PB": False,
     "MULTI_INIT": False,
 }
@@ -158,10 +160,10 @@ def main():
     problem.manual_seed(SEED)
     PATH_DATA = f"generated_nazari_problem/gen_nazari_{cfg['PROBLEM_DIM']}.pt"
     bdd = torch.load(PATH_DATA, map_location="cpu")
-    coords = bdd["node_coords"][0].unsqueeze(0)
-    demands = bdd["demands"][0].unsqueeze(0)
-    capacities = bdd["capacity"][0].unsqueeze(0)
-    problem.generate_params("test", True, coords, demands, capacities)
+    coords = bdd["node_coords"][torch.randint(0, 10000,(1,)).item()].unsqueeze(0)
+    demands = bdd["demands"][torch.randint(0, 10000, (1,)).item()].unsqueeze(0)
+    capacities = bdd["capacity"][torch.randint(0, 10000, (1,)).item()].unsqueeze(0)
+    problem.generate_params(coords, demands, capacities)
     init_x = problem.generate_init_state(CFG["INIT"])
 
     # Initialize actor
@@ -197,6 +199,12 @@ def main():
 
     # apply 2-opt intra-route optimization
     coordinates = problem.state_encoding
+    # Save coordinates and states for visualization
+    os.makedirs("example", exist_ok=True)
+    torch.save(coordinates, "example/coordinates.pt")
+    torch.save(result["solutions"], "example/states.pt")
+    torch.save(result["costs"], "example/costs.pt")
+
     result_2opt = cvrp_2opt_vectorized(
         result["best_x"], coordinates, max_iterations=10000
     )
@@ -281,7 +289,9 @@ def main():
         if a == 1:
             count_ones += 1
         acceptance_cum.append(count_ones / (i + 1))
-    print(f"acceptance ratio: {sum(acceptance)} / {len(acceptance)} = {sum(acceptance) / len(acceptance):.4f}")
+    print(
+        f"acceptance ratio: {sum(acceptance)} / {len(acceptance)} = {sum(acceptance) / len(acceptance):.4f}"
+    )
 
     # Find the first index where the minimum cost is reached
     min_cost = min(costs)
