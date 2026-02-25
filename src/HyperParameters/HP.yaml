@@ -1,6 +1,6 @@
 # =============== Project & Logging ===============
 PROJECT: "LGSA" # Project name
-GROUP: "" # Experimentation group
+GROUP: "Density" # Experimentation group
 COMMENT: ""
 LOG: True # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
@@ -18,7 +18,7 @@ DATA: "random" # Type of data: random or uchoa
 # =============== Heuristic & Initial Solution ===============
 HEURISTIC: "insertion" # Local search method (insertion, swap, two_opt)
 
-UPDATE_METHOD: "valid" # Update method after heuristic
+UPDATE_METHOD: "valid" # Update method after heuristi (rm_depot, free, valid)
 INIT: "random" # Initial solution method
 MULTI_INIT: False # Use multiple initial solutions
 MULTI_INIT_STEP: 0 # Step where all initial solutions are used
@@ -38,10 +38,9 @@ REWARD_SCALE: 1 # Scale factor for reward signal
 features:
   static: True          # coords, angles, depot info
   topology: True        # prev/next neighbors
-  # gap_ref: True        # gap to reference solution
   density10: False      # mean distance to 10 nearest neighbors
-  density50: False      # mean distance to 50 nearest neighbors
-  density_ratio: False  # ratio of density10 to density50
+  density33: False      # mean distance to 33 nearest neighbors
+  density_ratio: False  # ratio of density10 to density33
   detour: True          # detour
   centroid: True        # route centroid
   route_cost: True     # cost of the current route

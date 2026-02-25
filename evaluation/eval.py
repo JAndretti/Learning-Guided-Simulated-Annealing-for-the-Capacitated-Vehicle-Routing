@@ -252,6 +252,7 @@ def perform_test(
 
     # Using inf_test_model from init.py
     HP["TEST_OUTER_STEPS"] = HP["OUTER_STEPS"]
+    step = HP["TEST_OUTER_STEPS"]
     test = inf_test_model(
         actor=actor,
         problem=problem,
@@ -269,9 +270,7 @@ def perform_test(
 
     # 5. Run Baseline (if enabled)
     if baseline:
-        step = HP["OUTER_STEPS"]
-        HP["OUTER_STEPS"] *= 20
-        step_baseline = HP["OUTER_STEPS"]
+        step_baseline = HP["TEST_OUTER_STEPS"]
 
         start_time = time.time()
 
@@ -291,7 +290,6 @@ def perform_test(
             for k, v in test_baseline.items()
         }
 
-        HP["OUTER_STEPS"] = step
         final_cost_baseline = torch.mean(
             problem.cost(test_baseline["best_x"].to(problem.device))
         )

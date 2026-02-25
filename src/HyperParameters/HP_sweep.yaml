@@ -1,94 +1,9 @@
 # src/HyperParameters/HP_sweep.yaml
 
-
-
-# 2 DONE
-# - GROUP: ["CRITIC"]
-#   REWARD: ["immediate"]
-#   MULTI_INIT: [False]
-#   MULTI_INIT_STEP: [0]
-#   CL: [False]
-#   MAX_PROB_STEP: [0]
-#   MAX_OUTER_STEPS_CL: [0]
-#   CRITIC_MODEL: ["attention", "ff"]
-#   INIT: ["random"]
-
-# # 1
-# - GROUP: ["reward"]
-#   REWARD: ["immediate"]
-#   MULTI_INIT: [False]
-#   MULTI_INIT_STEP: [0]
-#   CL: [False]
-#   MAX_PROB_STEP: [0]
-#   MAX_OUTER_STEPS_CL: [0]
-#   CRITIC_MODEL: ["ff"]
-#   INIT: ["random"]
-
-# 2
-# - GROUP: ["MULTI_INIT"]
-#   REWARD: ["immediate"]
-#   MULTI_INIT: [True]
-#   MULTI_INIT_STEP: [0]
-#   CL: [False]
-#   MAX_PROB_STEP: [0]
-#   MAX_OUTER_STEPS_CL: [0]
-#   CRITIC_MODEL: ["ff"]
-#   INIT: ["random"]
-
-
-# # 1
-# - GROUP: ["INIT_sweep"]
-#   REWARD: ["immediate"]
-#   MULTI_INIT: [False]
-#   MULTI_INIT_STEP: [0]
-#   CL: [False]
-#   MAX_PROB_STEP: [0]
-#   MAX_OUTER_STEPS_CL: [0]
-#   CRITIC_MODEL: ["ff"]
-#   INIT: ["sweep"]
-#   TEST_INIT: ["sweep"]
-
-# # 4
-# - GROUP: ["CL"]
-#   REWARD: ["immediate"]
-#   MULTI_INIT: [False]
-#   MULTI_INIT_STEP: [0]
-#   CL: [True]
-#   MAX_PROB_STEP: [100, 300]
-#   MAX_OUTER_STEPS_CL: [100, 200]
-#   CRITIC_MODEL: ["ff"]
-#   INIT: ["random"]
-
-
-# - GROUP: ["METRO"]
-#   REWARD: ["immediate"]
-#   MULTI_INIT: [False]
-#   MULTI_INIT_STEP: [0]
-#   CL: [False]
-#   CRITIC_MODEL: ["ff"]
-#   INIT: ["random"]
-#   METROPOLIS: [False]
-
-# - GROUP: ["DATA"]
-#   REWARD: ["immediate"]
-#   MULTI_INIT: [False]
-#   MULTI_INIT_STEP: [0]
-#   CL: [False]
-#   CRITIC_MODEL: ["ff"]
-#   INIT: ["random"]
-#   DATA: ["uchoa"]
-#   NAZARI: [False]
-
-- GROUP: ["TWO_OPT"]
-  REWARD: ["immediate"]
-  MULTI_INIT: [False]
-  MULTI_INIT_STEP: [0]
-  CL: [False]
-  MAX_PROB_STEP: [0]
-  MAX_OUTER_STEPS_CL: [0]
-  CRITIC_MODEL: ["ff"]
-  INIT: ["random"]
-  HEURISTIC: ["two_opt"]
+# UPDATE METHOD
+- GROUP: ["UPDATE METHOD / HEURISTIC"]
+  UPDATE_METHOD: ["rm_depot", "free"]
+  HEURISTIC : ["insertion", "swap", "two_opt"]
 
 
 # # The Ablation Configurations

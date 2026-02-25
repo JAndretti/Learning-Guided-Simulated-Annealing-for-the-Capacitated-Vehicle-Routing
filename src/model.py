@@ -426,32 +426,25 @@ class CVRPActor(SAModel):
     ) -> Tuple[torch.Tensor, None, torch.Tensor]:
         """Generate baseline sample using uniform probabilities."""
         n_problems, problem_dim, _ = state.shape
-
-        x = state[:, :, :1]
-        logits = torch.ones(n_problems, problem_dim).to(self.generator.device)
-        mask = torch.ones_like(logits, dtype=torch.bool)
-        if self.method != "rm_depot":
-            tmp_mask = (x != 0).squeeze(-1)
-            logits[~tmp_mask] = -float("inf")
-            mask = tmp_mask
-            # Mask first and last logits
-            logits[:, 0] = -float("inf")
-            logits[:, -1] = -float("inf")
+        x = state[:, :, 0]
+        mask = x.squeeze(-1) != 0
+        # Sample c1 at random
+        if self.method == "rm_depot":
+            x = x[mask].view(n_problems, -1)
+            logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
+        else:
+            logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
         c1, _ = self.sample_from_logits(logits, one_hot=False)
 
-        # sample c2
 
-        logits = torch.ones(n_problems, problem_dim).to(self.generator.device)
+        logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
         mask = torch.ones_like(logits, dtype=torch.bool)
         if self.method == "valid":
-            mask = problem.get_action_mask(solution=x, node_pos=c1)
+            mask = problem.get_action_mask(x.unsqueeze(-1), c1)
             logits[~mask] = -float("inf")  # Mask invalid actions
         else:
             arange = torch.arange(n_problems).to(logits.device)
             logits[arange, c1] = -float("inf")
-            # Mask first and last logits
-            logits[:, 0] = -float("inf")
-            logits[:, -1] = -float("inf")
         c2, _ = self.sample_from_logits(logits, one_hot=False)
         action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
         return action, None, mask
