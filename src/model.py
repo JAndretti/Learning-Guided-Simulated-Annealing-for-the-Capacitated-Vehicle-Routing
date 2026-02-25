@@ -434,8 +434,13 @@ class CVRPActor(SAModel):
             logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
         else:
             logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
+            tmp_mask = (x != 0).squeeze(-1)
+            logits[~tmp_mask] = -float("inf")
+            mask = tmp_mask
+            # Mask first and last logits
+            logits[:, 0] = -float("inf")
+            logits[:, -1] = -float("inf")
         c1, _ = self.sample_from_logits(logits, one_hot=False)
-
 
         logits = torch.ones(n_problems, x.shape[1]).to(self.generator.device)
         mask = torch.ones_like(logits, dtype=torch.bool)
@@ -445,6 +450,10 @@ class CVRPActor(SAModel):
         else:
             arange = torch.arange(n_problems).to(logits.device)
             logits[arange, c1] = -float("inf")
+            # Mask first and last logits
+            if self.method == "free":
+                logits[:, 0] = -float("inf")
+                logits[:, -1] = -float("inf")
         c2, _ = self.sample_from_logits(logits, one_hot=False)
         action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
         return action, None, mask
