@@ -427,7 +427,7 @@ class CVRP(Problem):
         segment_sums.scatter_add_(1, self.segment_ids, edge_lengths)
 
         # Broadcast back to nodes
-        route_costs = segment_sums.gather(1, self.segment_ids) * self.mask
+        route_costs = segment_sums.gather(1, self.segment_ids) * ~self.mask
         num_routes = self.segment_ids.max(dim=1, keepdim=True)[0]
 
         return (route_costs * (num_routes / total_cost)).unsqueeze(-1)
