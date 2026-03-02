@@ -44,11 +44,10 @@ def setup_device(device: str) -> str:
     """
 
     # CUDA device configuration
-    if "cuda" in device:
-        if torch.cuda.is_available():
-            os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
-            torch.cuda.empty_cache()
-            torch.backends.cudnn.benchmark = False
+    if "cuda" in device and torch.cuda.is_available():
+        os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+        torch.cuda.empty_cache()
+        torch.backends.cudnn.benchmark = False
 
     # Apple Metal Performance Shaders (MPS) configuration
     else:
