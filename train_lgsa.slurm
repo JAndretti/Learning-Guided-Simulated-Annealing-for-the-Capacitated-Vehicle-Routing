@@ -15,6 +15,12 @@
 module purge
 module load pytorch-gpu/py3/2.8.0  # MUST match the version you used to install
 
+# Force WandB to save locally instead of hanging
+export WANDB_MODE=offline
+
+# Force Python to print instantly to the .out file
+export PYTHONUNBUFFERED=1
+
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
 srun uv run python src/main.py
