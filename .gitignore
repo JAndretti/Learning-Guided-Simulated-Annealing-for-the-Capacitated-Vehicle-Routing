@@ -73,3 +73,5 @@ cloud_gpu.txt
 **.ipynb
 
 !example/plots/**
+
+logs/

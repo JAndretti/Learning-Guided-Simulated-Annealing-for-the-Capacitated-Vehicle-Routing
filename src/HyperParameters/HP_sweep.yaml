@@ -1,9 +1,12 @@
 # src/HyperParameters/HP_sweep.yaml
 
-# UPDATE METHOD
-- GROUP: ["UPDATE METHOD / HEURISTIC"]
-  UPDATE_METHOD: ["rm_depot", "free"]
-  HEURISTIC : ["insertion", "swap", "two_opt"]
+
+# INIT JZ
+GROUP: ["Critic"]
+CRITIC_MODEL: ["ff"]
+
+GROUP: ["Critic"]
+CRITIC_MODEL: ["attention"]
 
 
 # # The Ablation Configurations

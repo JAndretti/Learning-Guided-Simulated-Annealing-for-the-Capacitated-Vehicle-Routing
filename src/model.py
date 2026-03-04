@@ -1,3 +1,4 @@
+import math
 from typing import Tuple
 
 import numpy as np
@@ -704,6 +705,45 @@ class CVRPCritic(nn.Module):
         return q_values
 
 
+class PositionalEncoding(nn.Module):
+    """
+    Standard Sinusoidal Positional Encoding.
+    Injects information about the relative or absolute position of the nodes in the sequence.
+    """
+
+    def __init__(self, embed_dim: int, max_len: int = 5000):
+        super().__init__()
+
+        # Create a matrix to hold the positional encodings
+        pe = torch.zeros(max_len, embed_dim)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+
+        # Calculate the frequencies for the sine and cosine waves
+        div_term = torch.exp(
+            torch.arange(0, embed_dim, 2).float() * (-math.log(10000.0) / embed_dim)
+        )
+
+        # Apply sine to even indices, cosine to odd indices
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        # Shape becomes [1, max_len, embed_dim] to easily broadcast across the batch
+        pe = pe.unsqueeze(0)
+
+        # Register as a buffer so it's saved with the model but NOT updated by the optimizer
+        self.register_buffer("pe", pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor of shape [Batch, Seq_Len, Embed_Dim]
+        """
+        # Add the positional encoding up to the current sequence length
+        seq_len = x.size(1)
+        x = x + self.pe[:, :seq_len, :]
+        return x
+
+
 class CVRPCriticAttention(nn.Module):
     """
     Critic network for CVRP that estimates state values using Attention Pooling.
@@ -739,6 +779,9 @@ class CVRPCriticAttention(nn.Module):
 
         self.node_encoder = nn.Sequential(*layers).to(device)
 
+        # Initializes the mathematical positional embeddings
+        self.pos_encoder = PositionalEncoding(embed_dim=embed_dim).to(device)
+
         # 2. Attention Pooling
         # This replaces the simple .mean()
         self.attention_pool = nn.MultiheadAttention(
@@ -760,9 +803,8 @@ class CVRPCriticAttention(nn.Module):
         self.apply(self.init_weights)
 
         # Specific Orthogonal Init for the final head (Critical for PPO)
-        if device == "mps":
-            pass
-        else:
+        self.apply(self.init_weights)
+        if device != "mps":
             nn.init.orthogonal_(self.value_head.weight, gain=1.0)
             if self.value_head.bias is not None:
                 nn.init.constant_(self.value_head.bias, 0.0)
@@ -787,27 +829,20 @@ class CVRPCriticAttention(nn.Module):
         # state structure assumption: [Batch, Nodes, Features]
         # We remove the first feature index as per your previous logic
         x = state[:, :, 1:]
+        batch_size = x.size(0)
 
         # 2. Encode Nodes
         # Output: [Batch, Nodes, Embed_Dim]
         node_embeddings = self.node_encoder(x)
 
-        # 3. Attention Pooling
-        # Expand the learnable query to match the batch size
-        # Query: [Batch, 1, Embed_Dim]
-        batch_size = x.size(0)
-        query = self.glimpse_query.expand(batch_size, -1, -1)
+        node_embeddings = self.pos_encoder(node_embeddings)
 
-        # Attention mechanism
-        # Output graph_embedding: [Batch, 1, Embed_Dim]
-        # We ignore attention weights (the second return value)
+        # Attention Pooling
+        query = self.glimpse_query.expand(batch_size, -1, -1)
         graph_embedding, _ = self.attention_pool(
             query, node_embeddings, node_embeddings
         )
 
-        # 4. Final Value Projection
-        # Squeeze removes the sequence dimension (1) -> [Batch, Embed_Dim]
+        # Final Value Projection
         value = self.value_head(graph_embedding.squeeze(1))
-
-        # Remove the last dimension to return [Batch]
         return value.squeeze(-1)
