@@ -1,8 +1,8 @@
 # =============== Project & Logging ===============
 PROJECT: "LGSA" # Project name
-GROUP: "Density" # Experimentation group
+GROUP: "BASE_2" # Experimentation group
 COMMENT: ""
-LOG: False # Enable or disable logging with WandB
+LOG: True # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
@@ -43,7 +43,7 @@ features:
   density_ratio: False  # ratio of density10 to density33
   detour: True          # detour
   centroid: True        # route centroid
-  route_cost: True     # cost of the current route
+  route_cost: False     # cost of the current route
   route_pct: True       # load of the route
   slack: True          # remaining load of the route
   node_pct: True       # node demand percentage with route capacity

@@ -63,6 +63,7 @@ if config["LOG"]:
 def log_training_and_test_metrics(
     actor_loss: Optional[float],
     critic_loss: float,
+    steps: int,
     avg_actor_grad: float,
     avg_critic_grad: float,
     lr_actor: float,
@@ -88,6 +89,7 @@ def log_training_and_test_metrics(
             {
                 "Actor_loss": actor_loss,
                 "Critic_loss": critic_loss,
+                "Train_Steps": steps,
                 "Train_loss": actor_loss + 0.5 * critic_loss,
                 "Avg_actor_grad": avg_actor_grad,
                 "Avg_critic_grad": avg_critic_grad,
@@ -425,6 +427,8 @@ def main(config: dict) -> None:
             step=epoch + 1,
         )
 
+        config["OUTER_STEPS"] += 0
+
         # C. Extract Stats
         actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
             train_stats
@@ -459,6 +463,7 @@ def main(config: dict) -> None:
             log_training_and_test_metrics(
                 actor_loss=actor_loss,
                 critic_loss=critic_loss,
+                steps=config["OUTER_STEPS"],
                 avg_actor_grad=avg_actor_grad,
                 avg_critic_grad=avg_critic_grad,
                 lr_actor=actor_optimizer.param_groups[0]["lr"],
