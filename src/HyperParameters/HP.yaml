@@ -51,7 +51,7 @@ features:
 
 # =============== Model Architecture ===============
 MODEL: "seq" # Model type: pairs, seq
-CRITIC_MODEL: "ff" # Critic model type: ff, attention
+CRITIC_MODEL: "attention" # Critic model type: ff, attention
 EMBEDDING_DIM: 32 # Embedding dimension
 NUM_H_LAYERS: 1 # Number of layers in the model
 
