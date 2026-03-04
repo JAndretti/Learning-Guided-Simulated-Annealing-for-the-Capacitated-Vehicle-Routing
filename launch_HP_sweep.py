@@ -1,9 +1,11 @@
 import random
 import subprocess
+import sys
 from itertools import product
 from multiprocessing import Process, Queue
 from time import sleep
 
+import torch
 import yaml
 from loguru import logger
 
@@ -16,12 +18,17 @@ logger.add(
         "<yellow>{message}</yellow>"
     ),
     colorize=True,
+    enqueue=True,
 )
 
 # ----------------------------------------------------
 # Global Parameters
 # ----------------------------------------------------
-GPU_AVAILABLES = [0]
+num_gpus = torch.cuda.device_count()
+if num_gpus > 0:
+    GPU_AVAILABLES = list(range(num_gpus))
+else:
+    GPU_AVAILABLES = [0]
 
 SWEEP_MODE = "random"  # grid, random
 
@@ -87,10 +94,9 @@ def run_training_script(gpu_id, hyperparameter_names, hyperparameter_values):
 
     """
 
-    cmd_str = f"CUDA_VISIBLE_DEVICES={gpu_id} python3 {TRAINING_SCRIPT_PATH}"
-
+    cmd_str = f"CUDA_VISIBLE_DEVICES={gpu_id} {sys.executable} {TRAINING_SCRIPT_PATH}"
     for hp_name, hp_val in zip(hyperparameter_names, hyperparameter_values):
-        cmd_str += f' --{hp_name} "{hp_val}"'  # cmd_str += f" --{hp_name} \"{hp_val}\""
+        cmd_str += f' --{hp_name} "{hp_val}"'
 
     subprocess.run(cmd_str, shell=True)
 
