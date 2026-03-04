@@ -21,6 +21,9 @@ export WANDB_MODE=offline
 # Force Python to print instantly to the .out file
 export PYTHONUNBUFFERED=1
 
+# Force tqdm to only print an update every 30 seconds
+export TQDM_MININTERVAL=30
+
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
 srun uv run python src/main.py
