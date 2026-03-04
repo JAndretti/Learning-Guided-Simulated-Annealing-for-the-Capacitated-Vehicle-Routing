@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=LGSA_train
-#SBATCH --account=uwa@v100  # REPLACE with your 3-letter code (e.g., abc@v100)
+#SBATCH --account=aik@v100  
 #SBATCH --constraint=v100
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1          # Number of GPUs you want
