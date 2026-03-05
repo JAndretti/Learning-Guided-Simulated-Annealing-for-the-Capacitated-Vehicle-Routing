@@ -2,230 +2,121 @@
 
 
 # INIT JZ
-GROUP: ["Critic"]
-CRITIC_MODEL: ["ff"]
+# - GROUP: ["Critic"]
+#   CRITIC_MODEL: ["ff", "attention"]
 
-GROUP: ["Critic"]
-CRITIC_MODEL: ["attention"]
+# --- BASELINE ---
+- GROUP: "Features"
+  COMMENT: "Baseline: All features enabled"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
+# --- LEAVE-ONE-OUT ABLATION ---
+- GROUP: "Features"
+  COMMENT: "Ablation: No static"
+  features: { static: False, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-# # The Ablation Configurations
-# features:
-#   # 1. Baseline (Full Model)
-#   - {
-#       static: true,          # coords, angles, depot info 
-#       topology: true,        # prev/next neighbors
-#       detour: true,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: True,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
+- GROUP: "Features"
+  COMMENT: "Ablation: No topology"
+  features: { static: True, topology: False, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-#   # 2. static
-#   - {
-#       static: true,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 3. topology
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: true,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 4. local features
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 5. route / node load features
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 6. route cost feature
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: True,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-# # feature one by one add
-#   # 7. detour
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 8. centroid
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 9. route_pct
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 10. slack
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 11. node_pct
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   #12. node_pct removed
-#   - {
-#       static: True,          # coords, angles, depot info 
-#       topology: True,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: True,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: False,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 13 slark removed
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: True,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: True,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: False,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 14 route_pct removed
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: True,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: True,     # cost of the current route
-#       route_pct: False,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 15 route_cost removed
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: True,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: False,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 16 centroid removed
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: True,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: False,        # route centroid
-#       route_cost: True,     # cost of the current route 
-#       route_pct: True,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 17 detour removed
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: True,        # prev/next neighbors
-#       detour: False,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: True,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
-#   # 18 topology removed
-#   - {
-#       static: True,          # coords, angles, depot info
-#       topology: False,        # prev/next neighbors
-#       detour: True,          # detour
-#       centroid: True,        # route centroid
-#       route_cost: True,     # cost of the current route
-#       route_pct: True,       # load of the route
-#       slack: True,          # remaining load of the route
-#       node_pct: True,       # node demand percentage with route capacity
-#       meta: True,            # temp, time
-#     }
+- GROUP: "Features"
+  COMMENT: "Ablation: No density5"
+  features: { static: True, topology: True, density5: False, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No density10%"
+  features: { static: True, topology: True, density5: True, density10%: False, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No density33%"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: False, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No density33% and density10%"
+  features: { static: True, topology: True, density5: True, density10%: False, density33%: False, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No detour"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No centroid"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: False, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No route_cost"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: False, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No route_pct"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: False, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No slack"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: False, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No node_pct"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Ablation: No meta"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: False }
+
+# --- THEMATIC ABLATION ---
+- GROUP: "Features"
+  COMMENT: "Thematic Ablation: No density features"
+  features: { static: True, topology: True, density5: False, density10%: False, density33%: False, detour: True, centroid: True, route_cost: True, route_pct: True, slack: True, node_pct: True, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Thematic Ablation: No load/capacity features"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_cost: True, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Thematic Ablation: No route characteristics"
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: False, route_cost: False, route_pct: True, slack: True, node_pct: True, meta: True }
+
+# --- ISOLATION (Base = static + meta) ---
+- GROUP: "Features"
+  COMMENT: "Isolation: Base only (static + meta)"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_cost: False, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + topology"
+  features: { static: True, topology: True, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_cost: False, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + density5"
+  features: { static: True, topology: False, density5: True, density10%: False, density33%: False, detour: False, centroid: False, route_cost: False, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + density10%"
+  features: { static: True, topology: False, density5: False, density10%: True, density33%: False, detour: False, centroid: False, route_cost: False, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + density33%"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: True, detour: False, centroid: False, route_cost: False, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + detour"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: True, centroid: False, route_cost: False, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + centroid"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: True, route_cost: False, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + route_cost"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_cost: True, route_pct: False, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + route_pct"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_cost: False, route_pct: True, slack: False, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + slack"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_cost: False, route_pct: False, slack: True, node_pct: False, meta: True }
+
+- GROUP: "Features"
+  COMMENT: "Isolation: Base + node_pct"
+  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_cost: False, route_pct: False, slack: False, node_pct: True, meta: True }

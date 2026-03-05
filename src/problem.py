@@ -174,10 +174,9 @@ class CVRP(Problem):
             # Pre-compute static geometric features
             self.angles = calculate_client_angles(self.coords)
             self.matrix = calculate_distance_matrix(self.coords)
-            self.isolation_score = calculate_knn_isolation(self.matrix, k=5)
+            self.mean_dist_5 = calculate_knn_isolation(self.matrix, k=5)
             self.mean_dist_10 = calculate_knn_isolation(self.matrix, k=self.dim // 10)
             self.mean_dist_33 = calculate_knn_isolation(self.matrix, k=self.dim // 3)
-            self.density_ratio = self.mean_dist_10 / (self.mean_dist_33 + 1e-8)
 
             # Normalize distances from depot [0, 1]
             self.dist_to_depot = self.matrix[:, 0, 0:]
@@ -217,14 +216,14 @@ class CVRP(Problem):
     def get_input_dim(self) -> int:
         """Calculates input channel dimension based on active feature flags."""
         dims = {
-            "static": 7,  # x, y, th, d, is_depot, q/Q, knn
+            "static": 6,  # x, y, th, d, is_depot, q/Q
             "topology": 4,  # prev_x, prev_y, next_x, next_y
-            "density10": 1,  # mean_dist_10
-            "density33": 1,  # mean_dist_33
-            "density_ratio": 1,  # density_ratio
+            "density5": 1,  # mean_dist_5
+            "density10%": 1,  # mean_dist_10%
+            "density33%": 1,  # mean_dist_33%
             "detour": 1,
             "centroid": 1,
-            "route_cost": 1,
+            # "route_cost": 1,
             "route_pct": 1,
             "slack": 1,
             "node_pct": 1,
@@ -290,7 +289,6 @@ class CVRP(Problem):
                     self.angles.gather(1, x),  # theta
                     self.dist_to_depot.gather(1, x),  # dist to depot
                     self.demand_normalized.gather(1, x),
-                    self.isolation_score.gather(1, x),
                 ]
             )
 
@@ -300,12 +298,12 @@ class CVRP(Problem):
             components.append(torch.roll(padded_coords, shifts=-1, dims=1))  # Next
 
         # 3. Density Features
-        if flags.get("density10", False):  # Defaults to True if you want them always on
+        if flags.get("density5", False):
+            components.append(self.mean_dist_5.gather(1, x))
+        if flags.get("density10%", False):  # Defaults to True if you want them always on
             components.append(self.mean_dist_10.gather(1, x))
-        if flags.get("density33", False):
+        if flags.get("density33%", False):
             components.append(self.mean_dist_33.gather(1, x))
-        if flags.get("density_ratio", False):
-            components.append(self.density_ratio.gather(1, x))
 
         # 4. Local Cost Features
         if flags.get("detour", False):
@@ -324,8 +322,8 @@ class CVRP(Problem):
                 components.append(node_pct)
 
         # 6. Route Cost Normalized
-        if flags.get("route_cost", False):
-            components.append(self.cost_per_route(x))
+        # if flags.get("route_cost", False):
+        #     components.append(self.cost_per_route(x))
 
         # 7. Metadata
         if flags.get("meta", True):
