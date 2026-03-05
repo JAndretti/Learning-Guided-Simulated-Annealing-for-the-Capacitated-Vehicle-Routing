@@ -78,5 +78,6 @@ logs/
 
 scripts/
 !scripts/
+!scripts/dl_model.sh
 !scripts/sync_wandb.sh
 !scripts/train_lgsa.slurm
