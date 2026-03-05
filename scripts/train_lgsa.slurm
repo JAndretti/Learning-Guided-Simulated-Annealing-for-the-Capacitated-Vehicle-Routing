@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:1                 # Must match ntasks-per-node
 #SBATCH --cpus-per-task=10           # 10 CPUs per V100 GPU
 #SBATCH --hint=nomultithread
-#SBATCH --time=03:00:00              # Max time (HH:MM:SS)
+#SBATCH --time=20:00:00              # Max time (HH:MM:SS)
 #SBATCH --output=logs/lgsa_%j.out
 #SBATCH --error=logs/lgsa_%j.out
 
@@ -26,4 +26,4 @@ export TQDM_MININTERVAL=30
 
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
-srun uv run python src/main.py
+srun uv run python launch_HP_sweep.py
