@@ -75,3 +75,7 @@ cloud_gpu.txt
 !example/plots/**
 
 logs/
+
+scripts/
+!scripts/
+!scripts/train_lgsa.slurm
