@@ -5,6 +5,7 @@ from itertools import product
 from multiprocessing import Process, Queue
 from time import sleep
 
+import torch
 import yaml
 from loguru import logger
 
@@ -23,13 +24,12 @@ logger.add(
 # ----------------------------------------------------
 # Global Parameters
 # ----------------------------------------------------
-# num_gpus = torch.cuda.device_count()
-# if num_gpus > 0:
-#     GPU_AVAILABLES = list(range(num_gpus))
-# else:
-#     GPU_AVAILABLES = [0]
+num_gpus = torch.cuda.device_count()
+if num_gpus > 0:
+    GPU_AVAILABLES = list(range(num_gpus))
+else:
+    GPU_AVAILABLES = [0]
 
-GPU_AVAILABLES = [0, 1]
 
 SWEEP_MODE = "random"  # grid, random
 
