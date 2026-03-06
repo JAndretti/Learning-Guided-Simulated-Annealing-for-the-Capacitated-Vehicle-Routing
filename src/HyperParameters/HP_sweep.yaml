@@ -36,9 +36,9 @@
   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
 # --- LEAVE-ONE-OUT ABLATION ---
-- GROUP: ["Features"]
-  COMMENT: ["Ablation_No_static"]
-  features: { static: False, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Ablation_No_static"]
+#   features: { static: False, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
 - GROUP: ["Features"]
   COMMENT: ["Ablation_No_topology"]
@@ -48,29 +48,29 @@
   COMMENT: ["Ablation_No_density5"]
   features: { static: True, topology: True, density5: False, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Ablation_No_density10"]
-  features: { static: True, topology: True, density5: True, density10%: False, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Ablation_No_density10"]
+#   features: { static: True, topology: True, density5: True, density10%: False, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
 - GROUP: ["Features"]
   COMMENT: ["Ablation_No_density33"]
   features: { static: True, topology: True, density5: True, density10%: True, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Ablation_No_density33_and_density10"]
-  features: { static: True, topology: True, density5: True, density10%: False, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Ablation_No_density33_and_density10"]
+#   features: { static: True, topology: True, density5: True, density10%: False, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Ablation_No_detour"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Ablation_No_detour"]
+#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
 - GROUP: ["Features"]
   COMMENT: ["Ablation_No_centroid"]
   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: False, route_pct: True, slack: True, node_pct: True, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Ablation_No_route_pct"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Ablation_No_route_pct"]
+#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
 
 - GROUP: ["Features"]
   COMMENT: ["Ablation_No_slack"]
@@ -80,39 +80,39 @@
   COMMENT: ["Ablation_No_node_pct"]
   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: False, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Ablation_No_meta"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: False }
+# - GROUP: ["Features"]
+#   COMMENT: ["Ablation_No_meta"]
+#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: False }
 
 # --- THEMATIC ABLATION ---
-- GROUP: ["Features"]
-  COMMENT: ["Thematic_Ablation_No_density_features"]
-  features: { static: True, topology: True, density5: False, density10%: False, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Thematic_Ablation_No_density_features"]
+#   features: { static: True, topology: True, density5: False, density10%: False, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Thematic_Ablation_No_load_capacity_features"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: False, node_pct: False, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Thematic_Ablation_No_load_capacity_features"]
+#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: False, node_pct: False, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Thematic_Ablation_No_route_characteristics"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: False, route_pct: True, slack: True, node_pct: True, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Thematic_Ablation_No_route_characteristics"]
+#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: False, route_pct: True, slack: True, node_pct: True, meta: True }
 
 # --- ISOLATION (Base = static + meta) ---
-- GROUP: ["Features"]
-  COMMENT: ["Isolation_Base_only_static_meta"]
-  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Isolation_Base_only_static_meta"]
+#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
 
 - GROUP: ["Features"]
   COMMENT: ["Isolation_Base_topology"]
   features: { static: True, topology: True, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Isolation_Base_density5"]
-  features: { static: True, topology: False, density5: True, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Isolation_Base_density5"]
+#   features: { static: True, topology: False, density5: True, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Isolation_Base_density10"]
-  features: { static: True, topology: False, density5: False, density10%: True, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Isolation_Base_density10"]
+#   features: { static: True, topology: False, density5: False, density10%: True, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
 
 - GROUP: ["Features"]
   COMMENT: ["Isolation_Base_density33"]
@@ -126,9 +126,9 @@
   COMMENT: ["Isolation_Base_centroid"]
   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: True, route_pct: False, slack: False, node_pct: False, meta: True }
 
-- GROUP: ["Features"]
-  COMMENT: ["Isolation_Base_route_pct"]
-  features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: True, slack: False, node_pct: False, meta: True }
+# - GROUP: ["Features"]
+#   COMMENT: ["Isolation_Base_route_pct"]
+#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: True, slack: False, node_pct: False, meta: True }
 
 - GROUP: ["Features"]
   COMMENT: ["Isolation_Base_slack"]
