@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the source and the base local destination
-REMOTE_PATH="JeanZay:/lustre/fswork/projects/rech/aik/uwa53wm/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing/wandb/LG-SA/Critic/"
+REMOTE_PATH="JeanZay:/lustre/fswork/projects/rech/aik/uwa53wm/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing/wandb/LG-SA/"
 LOCAL_BASE="/home/jules/Documents/LGSA-CVRP/wandb/LG-SA"
 
 # Ensure the base directory exists locally
@@ -19,6 +19,8 @@ while true; do
     
     # If the user leaves it blank, default to "Critic"
     TARGET_DIR=${TARGET_DIR:-Critic} 
+
+    REMOTE_PATH_WITH_TARGET="$REMOTE_PATH$TARGET_DIR/"
     
     FINAL_DEST="$LOCAL_BASE/$TARGET_DIR"
 
@@ -56,7 +58,7 @@ done
 echo ""
 echo "🚀 Starting secure transfer to: $FINAL_DEST"
 # The trailing slash on REMOTE_PATH ensures we put the contents inside FINAL_DEST
-rsync -avP "$REMOTE_PATH" "$FINAL_DEST/"
+rsync -avP "$REMOTE_PATH_WITH_TARGET" "$FINAL_DEST/"
 
 echo ""
 echo "✅ Transfer complete!"
