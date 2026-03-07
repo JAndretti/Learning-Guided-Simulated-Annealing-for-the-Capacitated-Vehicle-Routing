@@ -31,6 +31,7 @@
 #   NAZARI: [False]
 
 - GROUP: ["BEST"]
+  COMMENT: ["no_density_rout_pct"]
   features: { static: True, 
               topology: True, 
               density5: False, 
@@ -40,7 +41,21 @@
               centroid: True, 
               route_pct: False, 
               slack: True, 
-              node_pct: False, 
+              node_pct: True, 
+              meta: True }
+
+- GROUP: ["BEST"]
+  COMMENT: ["density5_rout_pct"]
+  features: { static: True, 
+              topology: True, 
+              density5: True, 
+              density10%: False, 
+              density33%: False, 
+              detour: True, 
+              centroid: True, 
+              route_pct: False, 
+              slack: True, 
+              node_pct: True, 
               meta: True }
 
 # # --- BASELINE ---
