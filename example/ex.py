@@ -97,10 +97,10 @@ def update(frame):
 ani = FuncAnimation(fig, update, frames=len(states), interval=50, blit=False)
 
 # 5. Show or save
-# plt.show()
+plt.show()
 
 # To save it as a GIF (uncomment below):
-ani.save("example/plots/cvrp_evolution.gif", writer="pillow", fps=20)
+# ani.save("example/plots/cvrp_evolution.gif", writer="pillow", fps=20)
 
 # To save it as an MP4 video (requires ffmpeg installed, uncomment below):
 # ani.save('cvrp_evolution.mp4', writer='ffmpeg', fps=20)

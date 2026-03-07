@@ -3,7 +3,7 @@ config:
   BATCH_SIZE: 2048
   BETA_KL: 1.0
   CL: false
-  COMMENT: ''
+  COMMENT: Ablation_No_route_pct
   CRITIC_MODEL: ff
   DATA: random
   DEVICE: cuda
@@ -12,7 +12,7 @@ config:
   EPS_CLIP: 0.25
   GAMMA: 0.99
   GP_LAMBDA: 0.01
-  GROUP: CRITIC
+  GROUP: Features
   HEURISTIC: insertion
   INIT: random
   INIT_LIST:
@@ -26,8 +26,8 @@ config:
   LR_ACTOR: 0.001
   LR_CRITIC: 0.001
   MAX_LOAD: 50
-  MAX_OUTER_STEPS_CL: 0
-  MAX_PROB_STEP: 0
+  MAX_OUTER_STEPS_CL: 100
+  MAX_PROB_STEP: 600
   METHOD: ppo
   METROPOLIS: true
   MODEL: seq
@@ -41,7 +41,7 @@ config:
   OUTER_STEPS: 100
   PPO_EPOCHS: 15
   PROBLEM_DIM: 100
-  PROJECT: LGSA
+  PROJECT: LG-SA
   REWARD: immediate
   REWARD_LAST: false
   REWARD_LAST_ADD: 0.001
@@ -53,8 +53,8 @@ config:
   TARGET_KL: 0.03
   TEST_DIMENSION: 100
   TEST_INIT: random
-  TEST_NB_PROBLEMS: 10000
-  TEST_OUTER_STEPS: 500
+  TEST_NB_PROBLEMS: 1000
+  TEST_OUTER_STEPS: 100
   TRACE_DECAY: 0.99
   UPDATE_METHOD: valid
   VERBOSE: false
@@ -62,11 +62,13 @@ config:
   WEIGHT_DECAY: 0.001
   features:
     centroid: true
+    density10%: true
+    density33%: true
+    density5: true
     detour: true
     meta: true
     node_pct: true
-    route_cost: true
-    route_pct: true
+    route_pct: false
     slack: true
     static: true
     topology: true

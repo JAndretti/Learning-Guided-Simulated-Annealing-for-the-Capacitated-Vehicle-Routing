@@ -28,7 +28,7 @@ from utils import is_feasible, plot_vehicle_routes, prepare_plot
 
 # --- Configurations ---
 
-MODEL_NAME = "20260129_224725_x2uj6g8k"
+MODEL_NAME = "20260306_015347_z4a4gbha"
 MODEL_DIR = glob(os.path.join("wandb", "LGSA", "*", "models", MODEL_NAME))[0]
 SEED = 2
 
@@ -180,7 +180,6 @@ def main():
             input_dim,
             num_hidden_layers=CFG["NUM_H_LAYERS"],
             device=CFG["DEVICE"],
-            mixed_heuristic=True if CFG["HEURISTIC"] == "mix" else False,
             method=CFG["UPDATE_METHOD"],
         )
     actor = load_model(actor, MODEL_DIR, "actor")
