@@ -17,19 +17,22 @@
   COMMENT: ["Heuristic"]
   HEURISTIC: ["swap", "two_opt"]
 
-- GROUP: ["test_params"]
+- GROUP: ["test_params_init"]
   COMMENT: ["Init_sweep"]
   UPDATE_METHOD: ["sweep"]
   TEST_INIT: ["sweep"]
-- GROUP: ["test_params"]
+
+- GROUP: ["test_params_init"]
   COMMENT: ["Init_isolate"]
   UPDATE_METHOD: ["isolate"]
   TEST_INIT: ["isolate"]
-- GROUP: ["test_params"]
+
+- GROUP: ["test_params_init"]
   COMMENT: ["Init_nearest_neighbor"]
   UPDATE_METHOD: ["nearest_neighbor"]
   TEST_INIT: ["nearest_neighbor"]
-- GROUP: ["test_params"]
+
+- GROUP: ["test_params_init"]
   COMMENT: ["Init_multi"]
   MULTI_INIT: [True]
 
