@@ -427,7 +427,9 @@ def main(config: dict) -> None:
             step=epoch + 1,
         )
 
-        config["OUTER_STEPS"] += 0
+        config["OUTER_STEPS"] += config[
+            "INCR_STEP"
+        ]  # Increment outer steps for next epoch (SA iterations)
 
         # C. Extract Stats
         actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
