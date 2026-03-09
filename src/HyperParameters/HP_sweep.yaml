@@ -3,7 +3,16 @@
 
 # INIT JZ
 - GROUP: [TEST_CL]
-  INCR_STEP: [3,5]
+  INCR_STEP: [0]
+  CL: [False]
+  MAX_PROB_STEP: [600]
+  MAX_OUTER_STEPS_CL: [100]
+
+- GROUP: [BASE_CL]
+  INCR_STEP: [0]
+  CL: [True]
+  MAX_PROB_STEP: [200, 500]
+  MAX_OUTER_STEPS_CL: [500, 1000, 2000]
 
 # - GROUP: ["Critic"]
 #   CRITIC_MODEL: ["ff", "attention"]

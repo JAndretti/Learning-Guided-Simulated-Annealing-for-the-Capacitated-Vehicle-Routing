@@ -147,7 +147,7 @@ def calculate_curriculum_steps(step: int, config: Dict[str, Any]) -> int:
     # Scale kappa based on total steps to maintain curve shape relative to paper
     # Paper used kappa=0.2 for 200 epochs
     kappa_base = 0.2
-    epochs_paper = 100
+    epochs_paper = 200
     kappa = kappa_base * (epochs_paper / max(1, E))
 
     def sigmoid_schedule(x, total_steps, k):
