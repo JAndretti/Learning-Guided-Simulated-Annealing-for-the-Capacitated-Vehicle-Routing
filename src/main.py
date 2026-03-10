@@ -136,7 +136,7 @@ def save_model(path: str, actor_model: Optional[torch.nn.Module] = None) -> None
         logger.info(f"Model saved to: {path}")
 
 
-def calculate_curriculum_steps(step: int, config: Dict[str, Any]) -> int:
+def calculate_curriculum_steps_sig(step: int, config: Dict[str, Any]) -> int:
     """
     Calculates the number of deterministic improvement steps (T_init)
     based on a Sigmoid schedule.
@@ -146,7 +146,7 @@ def calculate_curriculum_steps(step: int, config: Dict[str, Any]) -> int:
 
     # Scale kappa based on total steps to maintain curve shape relative to paper
     # Paper used kappa=0.2 for 200 epochs
-    kappa_base = 0.2
+    kappa_base = config["STEEP_SIG"]  # Base steepness from config
     epochs_paper = 200
     kappa = kappa_base * (epochs_paper / max(1, E))
 
@@ -161,6 +161,17 @@ def calculate_curriculum_steps(step: int, config: Dict[str, Any]) -> int:
 
     # Calculate progress ratio
     progress_ratio = (s_e - s_0) / (s_E - s_0) if E > 0 else 1.0
+
+    t_init = int(progress_ratio * xi_cl)
+    return max(0, min(t_init, xi_cl))
+
+
+def calculate_curriculum_steps_lin(step: int, config: Dict[str, Any]) -> int:
+    xi_cl = config["MAX_OUTER_STEPS_CL"]
+    E = config["MAX_PROB_STEP"]
+
+    # LINEAR SCHEDULE: smoothly goes from 0 to xi_cl over E epochs
+    progress_ratio = step / max(1, E)
 
     t_init = int(progress_ratio * xi_cl)
     return max(0, min(t_init, xi_cl))
@@ -259,7 +270,11 @@ def train_ppo(
     # 2. Curriculum Learning (Improvement Phase)
 
     if config["CL"]:
-        t_init = calculate_curriculum_steps(step, config)
+        t_init = (
+            calculate_curriculum_steps_sig(step, config)
+            if config["CL_TYPE"] == "sig"
+            else calculate_curriculum_steps_lin(step, config)
+        )
 
         if t_init > 0:
             original_steps = config.get("TEST_OUTER_STEPS", 0)

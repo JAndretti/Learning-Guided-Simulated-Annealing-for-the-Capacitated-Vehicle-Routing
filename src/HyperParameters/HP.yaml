@@ -84,7 +84,9 @@ GP_LAMBDA: 0.01 # Gradient penalty weight
 CL : False # Enable curriculum learning
 MAX_PROB_STEP: 600 # Step to calcul the curriculum step 
 MAX_OUTER_STEPS_CL: 100 # Max outer steps for curriculum learning (pre steps)
-INCR_STEP: 3 # Increment of outer steps for curriculum learning
+STEEP_SIG: 0.05 # Steepness of the sigmoid function for curriculum learning 
+CL_TYPE: "sig" # Curriculum learning schedule type: sig or lin
+INCR_STEP: 0 # Increment of outer steps for curriculum learning
 
 # =============== Testing during training ===============
 TEST_DIMENSION: 100 # Test dimension (50 or 100)

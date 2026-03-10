@@ -2,17 +2,13 @@
 
 
 # INIT JZ
-- GROUP: [TEST_CL]
-  INCR_STEP: [0]
-  CL: [False]
-  MAX_PROB_STEP: [600]
-  MAX_OUTER_STEPS_CL: [100]
 
-- GROUP: [BASE_CL]
-  INCR_STEP: [0]
+- GROUP: [NEW_CL]
   CL: [True]
-  MAX_PROB_STEP: [200, 500]
-  MAX_OUTER_STEPS_CL: [500, 1000, 2000]
+  MAX_PROB_STEP: [500]
+  MAX_OUTER_STEPS_CL: [500, 1000]
+  STEEP_SIG: [0.05] # kappa_base
+  CL_TYPE: ["sig", "lin"] # Curriculum learning schedule type: sigmoid or linear
 
 # - GROUP: ["Critic"]
 #   CRITIC_MODEL: ["ff", "attention"]
