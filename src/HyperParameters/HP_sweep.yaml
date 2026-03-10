@@ -3,10 +3,10 @@
 
 # INIT JZ
 
-- GROUP: [NEW_CL]
+- GROUP: [CL]
   CL: [True]
   MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [500, 1000]
+  MAX_OUTER_STEPS_CL: [1000]
   STEEP_SIG: [0.05] # kappa_base
   CL_TYPE: ["sig", "lin"] # Curriculum learning schedule type: sigmoid or linear
 
