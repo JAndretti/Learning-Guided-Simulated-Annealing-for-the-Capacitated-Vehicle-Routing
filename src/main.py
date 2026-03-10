@@ -509,6 +509,14 @@ def main(config: dict) -> None:
                     epoch=epoch,
                     model_name=f"{config['PROJECT']}_{config['GROUP']}_actor",
                 )
+            if epoch % 50 == 0:
+                WandbLogger.log_checkpoint(
+                    save_func=save_model,
+                    model=actor,
+                    val_loss=current_test_loss.item(),
+                    epoch=epoch,
+                    model_name=f"{config['PROJECT']}_{config['GROUP']}_checkpoint",
+                )
 
         # G. Loop termination
         if early_stopping_counter > 10 and (

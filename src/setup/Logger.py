@@ -203,3 +203,30 @@ class WandbLogger:
                 )
                 return saved, path
             return False, None
+
+    @classmethod
+    def log_checkpoint(
+        cls,
+        save_func: Callable[[str], None],
+        model: SAModel,
+        val_loss: float,
+        epoch: int,
+        model_name: str,
+    ):
+        """
+        Unconditionally saves the given model to cls._instance.model_dir/checkpoints
+
+        Returns:
+            - str: Path where the model was saved, or None if no logger instance
+        """
+        if cls._instance is None:
+            logging.warning("No Wandb logging")
+            return None
+        checkpoint_dir = os.path.join(cls._instance.model_dir, "checkpoints")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        if model_name is not None:
+            model_name += "_"
+        model_name += f"epoch_{epoch}_loss_{val_loss:.6f}.pt"
+        file_path = os.path.join(checkpoint_dir, model_name)
+        save_func(file_path, model)
+        return file_path
