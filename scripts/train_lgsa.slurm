@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1          # Nombre de GPU
 #SBATCH --gres=gpu:1                 # Doit correspondre à ntasks-per-node
-#SBATCH --cpus-per-task=10            # 8 CPUs par GPU sur A100 / 10 sur V100
+#SBATCH --cpus-per-task=10           # 8 CPUs par GPU sur A100 / 10 sur V100
 #SBATCH --hint=nomultithread
 #SBATCH --time=15:00:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
 #SBATCH --output=logs/lgsa_%j.out
