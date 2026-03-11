@@ -6,9 +6,10 @@
 - GROUP: [CL]
   CL: [True]
   MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [1000]
+  MAX_OUTER_STEPS_CL: [200]
   STEEP_SIG: [0.05] # kappa_base
   CL_TYPE: ["sig", "lin"] # Curriculum learning schedule type: sigmoid or linear
+  TEST_OUTER_STEPS: [10000]
 
 # - GROUP: ["Critic"]
 #   CRITIC_MODEL: ["ff", "attention"]
