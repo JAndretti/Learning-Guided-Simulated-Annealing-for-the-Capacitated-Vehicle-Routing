@@ -28,12 +28,12 @@ ax.scatter(
     zorder=2,
 )
 
-# NEW: Use the 'tab10' colormap which has 10 highly distinct, bold colors.
-max_vehicles = 15  # Set a bit higher than 10 just in case
+# Use the 'tab10' colormap which has 10 highly distinct, bold colors.
+max_vehicles = 101  # Set higher to support up to 101 routes
 cmap = plt.get_cmap("tab10")
 route_lines = []
 for i in range(max_vehicles):
-    # Using modulo (%) ensures that if you accidentally get 11 routes,
+    # Using modulo (%) ensures that if you accidentally get more routes,
     # it just loops back to the first color instead of crashing.
     (line,) = ax.plot(
         [], [], "-", linewidth=2.5, alpha=0.9, zorder=1, color=cmap(i % 10)

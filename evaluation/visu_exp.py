@@ -28,17 +28,17 @@ from utils import is_feasible, plot_vehicle_routes, prepare_plot
 
 # --- Configurations ---
 
-MODEL_NAME = "20260306_015347_z4a4gbha"
+MODEL_NAME = "20260312_101658_qo392qd8"
 MODEL_DIR = glob(os.path.join("wandb", "LGSA", "*", "models", MODEL_NAME))[0]
-SEED = 2
+SEED = 1
 
 cfg = {
-    "PROBLEM_DIM": 50,
-    "MAX_LOAD": 40,
+    "PROBLEM_DIM": 100,
+    "MAX_LOAD": 50,
     "N_PROBLEMS": 1,
     "TEST_OUTER_STEPS": 1000,
     "DEVICE": "cpu",
-    "INIT": "random",
+    "INIT": "isolate",
     "SEED": SEED,
     "LOAD_PB": False,
     "MULTI_INIT": False,
@@ -199,10 +199,10 @@ def main():
     # apply 2-opt intra-route optimization
     coordinates = problem.state_encoding
     # Save coordinates and states for visualization
-    os.makedirs("example", exist_ok=True)
-    torch.save(coordinates, "example/coordinates.pt")
-    torch.save(result["solutions"], "example/states.pt")
-    torch.save(result["costs"], "example/costs.pt")
+    os.makedirs("example/data", exist_ok=True)
+    torch.save(coordinates, "example/data/coordinates.pt")
+    torch.save(result["solutions"], "example/data/states.pt")
+    torch.save(result["costs"], "example/data/costs.pt")
 
     result_2opt = cvrp_2opt_vectorized(
         result["best_x"], coordinates, max_iterations=10000
@@ -254,12 +254,13 @@ def main():
     ).item()
     print(f"Solution found is feasible: {valid}")
     # Configure OR-Tools parameters
-    or_tools_cfg = {
-        "OR_TOOLS_TIME": int(
-            # execution_time + 0.999
-            1
-        ),  # Time limit in seconds rounded up
-    }
+    # or_tools_cfg = {
+    #     "OR_TOOLS_TIME": int(
+    #         # execution_time + 0.999
+    #         1
+    #     ),  # Time limit in seconds rounded up
+    # }
+    or_tools_cfg = {"OR_TOOLS_TIME": execution_time}
     params = {
         "coords": problem.coords.cpu(),
         "demands": problem.demands.cpu(),
