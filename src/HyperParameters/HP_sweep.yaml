@@ -3,12 +3,12 @@
 
 # INIT JZ
 
-- GROUP: [A_CL]
+- GROUP: [CL_Time_Scaling]
   CL: [True]
-  MAX_PROB_STEP: [200]
-  MAX_OUTER_STEPS_CL: [200, 500]
-  CL_TYPE: ["lin", "sig"] 
-  STEEP_SIG: [0.01] # Only used when CL_TYPE is "sig"
+  MAX_PROB_STEP: [1000] # 5x longer training
+  MAX_OUTER_STEPS_CL: [500]
+  STEEP_SIG: [0.01] 
+  CL_TYPE: ["sig"] 
   TEST_OUTER_STEPS: [10000]
 
 # - GROUP: ["Critic"]
