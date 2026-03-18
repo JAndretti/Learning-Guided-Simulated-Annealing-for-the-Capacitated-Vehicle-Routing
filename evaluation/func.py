@@ -200,3 +200,16 @@ def plot_cvrp_solution(
     plt.legend()
     plt.grid(True)
     return fig
+
+
+def warmup_cuda(device: str = "cuda"):
+    """
+    Run a small dummy operation on the specified CUDA device to trigger GPU initialization and reduce first-batch latency.
+    """
+    if torch.cuda.is_available():
+        logger.info(f"Warming up CUDA on device {device}...")
+        torch.empty(1, device=device).uniform_()
+        torch.cuda.synchronize()
+        logger.info("CUDA warmup complete.")
+    else:
+        logger.info("CUDA not available; skipping warmup.")

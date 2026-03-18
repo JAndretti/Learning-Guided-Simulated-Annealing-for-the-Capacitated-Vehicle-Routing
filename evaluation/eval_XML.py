@@ -13,11 +13,7 @@ from tqdm import tqdm
 # --- Project Imports ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from func import (
-    init_problem_parameters,
-    load_model,
-    set_seed,
-)
+from func import init_problem_parameters, load_model, set_seed, warmup_cuda
 
 from init import initialize_models, test_model
 from problem import CVRP
@@ -40,7 +36,7 @@ parser.add_argument(
 )
 parser.add_argument("--INIT", type=str, default="random", help="Initialization method")
 parser.add_argument(
-    "--OUTER_STEPS", type=int, default=1000, help="Number of steps for LGSA"
+    "--OUTER_STEPS", type=int, default=10000, help="Number of steps for LGSA"
 )
 parser.add_argument("--seed", type=int, default=1234, help="Random seed")
 parser.add_argument(
@@ -176,6 +172,8 @@ def solve_batch(model_name, instance_files, global_config):
     # 4. Run LGSA Inference (One Pass)
     HP["TEST_OUTER_STEPS"] = args.OUTER_STEPS
     print("Running LGSA Inference on batch...")
+
+    warmup_cuda()
 
     start_time = time.time()
     results = test_model(

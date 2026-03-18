@@ -18,6 +18,7 @@ from func import (
     init_problem_parameters,
     load_model,
     set_seed,
+    warmup_cuda,
 )
 
 from init import inf_test_model, initialize_models, initialize_test_problem
@@ -92,12 +93,19 @@ parser.add_argument(
     help="Disable the Metropolis acceptance criterion",
 )
 
+parser.add_argument(
+    "--batch_size",
+    default=10000,
+    type=int,
+    help="Batch size for training",
+)
+
 args = parser.parse_args()
 
 # Configuration
 cfg = {
     "PROBLEM_DIM": args.dim,
-    "N_PROBLEMS": 10000,
+    "N_PROBLEMS": args.batch_size,
     "OUTER_STEPS": args.OUTER_STEPS,
     "DEVICE": (
         "cuda"
@@ -246,6 +254,8 @@ def perform_test(
 
     # 3. Load weights
     actor = load_model(actor, model_name, "actor")
+    
+    warmup_cuda()
 
     # 4. Run Inference (LGSA Model)
     start_time = time.time()

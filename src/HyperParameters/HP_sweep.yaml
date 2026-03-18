@@ -2,11 +2,46 @@
 
 
 # INIT JZ
-- GROUP: [Big_train]
-  N_PROBLEMS: [4096]           # Scale up parallel data collection
-  BATCH_SIZE: [8192]           # Scale up gradient batch size
-  TEST_NB_PROBLEMS: [10000]    # Test on the full set
-  TEST_OUTER_STEPS: [10000]
+- GROUP: ["UPDATE_METHOD_and_HEURISTIC"]
+  UPDATE_METHOD: ["valid", "rm_depot", "free"]
+  HEURISTIC: ["insertion", "swap", "two_opt"]
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+  CL: [False]
+  TEST_OUTER_STEPS: [1000]
+  EMBEDDING_DIM: [32]
+  NUM_H_LAYERS: [1]
+  SCHEDULER: ["lam"]
+
+- GROUP: ["arch"]
+  UPDATE_METHOD: ["valid"]
+  HEURISTIC: ["insertion"]
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
+  CL: [False]
+  TEST_OUTER_STEPS: [1000]
+  EMBEDDING_DIM: [64]
+  NUM_H_LAYERS: [1]
+  SCHEDULER: ["lam"]
+
+- GROUP: ["arch"]
+  UPDATE_METHOD: ["valid"]
+  HEURISTIC: ["insertion"]
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
+  CL: [False]
+  TEST_OUTER_STEPS: [1000]
+  EMBEDDING_DIM: [32]
+  NUM_H_LAYERS: [2]
+  SCHEDULER: ["lam"]
+
+
+- GROUP: ["temp"]
+  UPDATE_METHOD: ["valid"]
+  HEURISTIC: ["insertion"]
+  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
+  CL: [False]
+  TEST_OUTER_STEPS: [1000]
+  EMBEDDING_DIM: [32]
+  NUM_H_LAYERS: [1]
+  SCHEDULER: ["step"]
 
 # - GROUP: [CL_Time_Scaling]
 #   CL: [True]

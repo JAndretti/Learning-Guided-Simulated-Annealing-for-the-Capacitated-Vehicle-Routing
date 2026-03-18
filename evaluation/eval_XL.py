@@ -36,7 +36,7 @@ parser.add_argument(
 )
 parser.add_argument("--INIT", type=str, default="random", help="Initialization method")
 parser.add_argument(
-    "--OUTER_STEPS", type=int, default=1000, help="Number of steps for LGSA"
+    "--OUTER_STEPS", type=int, default=10000, help="Number of steps for LGSA"
 )
 parser.add_argument("--seed", type=int, default=1234, help="Random seed")
 parser.add_argument("--device", type=str, default="cpu")
@@ -219,6 +219,10 @@ def main():
     final_results = []
 
     print(f"Found {len(instance_files)} instances. Starting evaluation...")
+
+    # warm up
+    print("Warming up the model on a sample instance...")
+    solve_instance(model_name, instance_files[len(instance_files) // 2], cfg)
 
     for f in tqdm(instance_files):
         try:
