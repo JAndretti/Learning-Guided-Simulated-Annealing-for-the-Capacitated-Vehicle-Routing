@@ -715,6 +715,11 @@ class CVRP(Problem):
         # in a single tensor op without masking, we calculate both and blend.
         # (Or execute purely based on indices if one function handled both,
         # but the logic differs).
+        
+        if self.params.get("UPDATE_METHOD") == "rm_depot":
+            # In this mode, we have already removed depots and are working on compacted TSP sequences.
+            # The action indices correspond to the compacted sequences, so we can directly apply 2-opt logic.
+            return two_opt(solution, action)
 
         # 1. Apply Intra-Route (Standard Reversal)
         sol_intra = two_opt(solution, action)

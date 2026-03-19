@@ -3,45 +3,34 @@
 
 # INIT JZ
 - GROUP: ["UPDATE_METHOD_and_HEURISTIC"]
-  UPDATE_METHOD: ["valid", "rm_depot", "free"]
-  HEURISTIC: ["insertion", "swap", "two_opt"]
+  UPDATE_METHOD: ["rm_depot"]
+  HEURISTIC: ["two_opt"]
   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
   CL: [False]
+  MAX_OUTER_STEPS_CL: [500] 
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.01]
+  CL_TYPE: ["sig"]
   TEST_OUTER_STEPS: [1000]
   EMBEDDING_DIM: [32]
   NUM_H_LAYERS: [1]
   SCHEDULER: ["lam"]
 
-- GROUP: ["arch"]
+- GROUP: ["CL_2"]
   UPDATE_METHOD: ["valid"]
   HEURISTIC: ["insertion"]
   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
-  CL: [False]
-  TEST_OUTER_STEPS: [1000]
-  EMBEDDING_DIM: [64]
-  NUM_H_LAYERS: [1]
-  SCHEDULER: ["lam"]
-
-- GROUP: ["arch"]
-  UPDATE_METHOD: ["valid"]
-  HEURISTIC: ["insertion"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
-  CL: [False]
-  TEST_OUTER_STEPS: [1000]
-  EMBEDDING_DIM: [32]
-  NUM_H_LAYERS: [2]
-  SCHEDULER: ["lam"]
-
-
-- GROUP: ["temp"]
-  UPDATE_METHOD: ["valid"]
-  HEURISTIC: ["insertion"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
-  CL: [False]
+  CL: [True]
+  MAX_OUTER_STEPS_CL: [500] 
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.02]
+  CL_TYPE: ["sig", "lin"]
   TEST_OUTER_STEPS: [1000]
   EMBEDDING_DIM: [32]
   NUM_H_LAYERS: [1]
-  SCHEDULER: ["step"]
+  SCHEDULER: ["lam"]
+
+
 
 # - GROUP: [CL_Time_Scaling]
 #   CL: [True]

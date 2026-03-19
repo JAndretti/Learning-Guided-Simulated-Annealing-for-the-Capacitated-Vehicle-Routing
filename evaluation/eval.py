@@ -97,7 +97,7 @@ parser.add_argument(
     "--batch_size",
     default=10000,
     type=int,
-    help="Batch size for training",
+    help="Batch size for testing (nb problems to solve in parallel during evaluation)",
 )
 
 args = parser.parse_args()
