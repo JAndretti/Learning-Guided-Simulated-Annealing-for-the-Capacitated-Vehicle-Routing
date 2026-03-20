@@ -2,33 +2,19 @@
 
 
 # INIT JZ
-- GROUP: ["UPDATE_METHOD_and_HEURISTIC"]
-  UPDATE_METHOD: ["rm_depot"]
-  HEURISTIC: ["two_opt"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
-  CL: [False]
-  MAX_OUTER_STEPS_CL: [500] 
-  MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.01]
-  CL_TYPE: ["sig"]
-  TEST_OUTER_STEPS: [1000]
-  EMBEDDING_DIM: [32]
-  NUM_H_LAYERS: [1]
-  SCHEDULER: ["lam"]
-
-- GROUP: ["CL_2"]
-  UPDATE_METHOD: ["valid"]
-  HEURISTIC: ["insertion"]
-  features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
+- GROUP: ["CL_3"]
   CL: [True]
-  MAX_OUTER_STEPS_CL: [500] 
+  MAX_OUTER_STEPS_CL: [200] 
   MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.02]
-  CL_TYPE: ["sig", "lin"]
-  TEST_OUTER_STEPS: [1000]
-  EMBEDDING_DIM: [32]
-  NUM_H_LAYERS: [1]
-  SCHEDULER: ["lam"]
+  STEEP_SIG: [0.02] 
+  CL_TYPE: ["lin"]
+
+- GROUP: ["CL_3"]
+  CL: [True]
+  MAX_OUTER_STEPS_CL: [200] 
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.02, 0.01] 
+  CL_TYPE: ["sig"]
 
 
 
