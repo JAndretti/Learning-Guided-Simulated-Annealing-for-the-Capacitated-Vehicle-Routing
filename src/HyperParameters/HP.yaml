@@ -2,7 +2,7 @@
 PROJECT: "LG-SA" # Project name
 GROUP: "" # Experimentation group
 COMMENT: ""
-LOG: True # Enable or disable logging with WandB
+LOG: False # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
@@ -26,13 +26,8 @@ INIT_LIST: ["isolate", "random", "sweep", "nearest_neighbor"] # List of initial 
 
 # =============== Reward ===============
 
-REWARD: "immediate" # Reward calculation method
-REWARD_LAST: False
-REWARD_LAST_ADD: 0.001
-REWARD_VALID: False # penalize invalid solutions in reward
+REWARD: "terminal" # Reward calculation method (immediate, sa_aligned, terminal, global_best, step_penalty_init, step_penalty_16)
 NORMALIZE_REWARD: False # Normalize reward to have mean 0 and std 1
-WARMUP_EPOCHS: 0 # Number of epochs using immediate weight warmup
-REWARD_SCALE: 1 # Scale factor for reward signal
 
 # =============== Features ===============
 features:
@@ -86,7 +81,6 @@ MAX_PROB_STEP: 1000 # Step to calcul the curriculum step
 MAX_OUTER_STEPS_CL: 500 # Max outer steps for curriculum learning (pre steps)
 STEEP_SIG: 0.01 # Steepness of the sigmoid function for curriculum learning 
 CL_TYPE: "sig" # Curriculum learning schedule type: sig or lin
-INCR_STEP: 0 # Increment of outer steps for curriculum learning
 
 # =============== Testing during training ===============
 TEST_DIMENSION: 100 # Test dimension (50 or 100)

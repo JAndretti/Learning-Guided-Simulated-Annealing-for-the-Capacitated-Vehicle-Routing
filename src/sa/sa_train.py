@@ -112,6 +112,7 @@ def metropolis_accept(
 def calculate_reward(
     config: dict,
     actual_improvement: torch.Tensor,
+    is_accepted: torch.Tensor,
     is_valid: torch.Tensor,
     best_cost: torch.Tensor,
     old_best_cost: torch.Tensor,
@@ -122,33 +123,22 @@ def calculate_reward(
     last_step: bool = False,
 ) -> torch.Tensor:
     """
-    Computes RL reward signal using Linear Warmup and Target Mixing.
-    Reward = (weight * Immediate_Reward) + ((1-weight) * Target_Reward).
+    Computes RL reward signal based on the selected REWARD configuration.
     """
     if config["METHOD"] != "ppo":
         return torch.zeros_like(actual_improvement).view(-1, 1)
 
-    # --- 1. Calculate Mixing Weights ---
-    warmup_epochs = config.get("WARMUP_EPOCHS", 0)
-    if warmup_epochs > 0 and step < warmup_epochs:
-        target_weight = step / warmup_epochs
-        immediate_weight = 1.0 - target_weight
-    else:
-        target_weight = 1.0
-        immediate_weight = 0.0
+    reward = torch.zeros_like(actual_improvement).view(-1, 1)
+    reward_mode = config["REWARD"]
 
-    # --- 2. Immediate Component ---
-    reward_immediate = torch.zeros_like(actual_improvement).view(-1, 1)
-
-    if immediate_weight > 0 or config["REWARD"] == "immediate":
+    if reward_mode == "immediate":
         val_imm = (
             normalize(actual_improvement, initial_cost)
             if config["NORMALIZE_REWARD"]
             else actual_improvement
         )
-
         # Penalize invalid, zero for no-op, value for valid
-        reward_immediate = torch.where(
+        reward = torch.where(
             ~is_valid.bool().squeeze(-1),
             -1.5,
             torch.where(
@@ -158,42 +148,50 @@ def calculate_reward(
             ),
         ).view(-1, 1)
 
-    # --- 3. Target Component ---
-    reward_target = torch.zeros_like(actual_improvement).view(-1, 1)
-    target_mode = config["REWARD"]
-
-    if target_mode == "dact":
-        # Improve over global best
-        current_step_min = torch.min(new_cost, old_best_cost)
-        raw_reward = old_best_cost - current_step_min
-        reward_target = torch.where(
-            is_valid.bool().view(-1, 1),
-            raw_reward.view(-1, 1),
-            torch.zeros_like(raw_reward).view(-1, 1),
+    elif reward_mode == "sa_aligned":
+        val_imm = (
+            normalize(actual_improvement, initial_cost)
+            if config["NORMALIZE_REWARD"]
+            else actual_improvement
         )
-        reward_target *= config.get("REWARD_SCALE", 10.0)
+        is_acc = is_accepted.bool()
+        if is_acc.dim() > 1:
+            is_acc = is_acc.squeeze(-1)
 
-    elif target_mode == "immediate":
-        reward_target = reward_immediate
-    elif target_mode == "min_cost":
-        reward_target = ((initial_cost + best_cost) / initial_cost).view(-1, 1)
-    elif target_mode == "primal":
-        reward_target = -cumulative_cost.view(-1, 1)
+        sa_reward = torch.where(
+            is_acc & (actual_improvement > 0),
+            val_imm,
+            torch.where(
+                is_acc & (actual_improvement <= 0),
+                torch.zeros_like(val_imm),
+                torch.full_like(val_imm, -0.1),  # Rejected move penalty
+            ),
+        )
+        reward = torch.where(~is_valid.bool().squeeze(-1), -1.5, sa_reward).view(-1, 1)
 
-    # --- 4. Final Combination ---
-    final_reward = (immediate_weight * reward_immediate) + (
-        target_weight * reward_target
-    )
-
-    # Overrides
-    if config["REWARD_VALID"]:
-        final_reward[~is_valid.view(-1, 1)] = -1.0
-    if config["REWARD_LAST"] and last_step:
-        final_reward = (
-            config["REWARD_LAST_SCALE"] * ((initial_cost - best_cost) / initial_cost)
+    elif reward_mode == "global_best" or reward_mode == "dact":
+        improvement_over_best = old_best_cost - best_cost
+        val_imm = (
+            normalize(improvement_over_best, initial_cost)
+            if config["NORMALIZE_REWARD"]
+            else improvement_over_best
+        )
+        reward = torch.where(
+            improvement_over_best > 0, val_imm, torch.zeros_like(improvement_over_best)
         ).view(-1, 1)
+        reward *= config.get("REWARD_SCALE", 1.0)
 
-    return final_reward
+    elif reward_mode == "step_penalty_init":
+        reward = -(best_cost / initial_cost).view(-1, 1)
+
+    elif reward_mode == "step_penalty_16":
+        reward = -(best_cost / 16.0).view(-1, 1)
+
+    elif reward_mode == "terminal":
+        if last_step:
+            reward = ((initial_cost - best_cost) / initial_cost).view(-1, 1)
+
+    return reward
 
 
 # ============================================================================
@@ -381,6 +379,7 @@ def sa_train(
         tracking["reward_signal"] = calculate_reward(
             config,
             actual_improvement,
+            is_accepted,
             is_valid,
             opt_state["best_cost"],
             old_best_cost,

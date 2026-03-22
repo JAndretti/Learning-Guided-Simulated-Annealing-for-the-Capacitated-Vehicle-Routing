@@ -366,9 +366,6 @@ def main(config: dict) -> None:
     config["ENTRY"] = input_dim
     logger.info(f"Problem Input Dimension: {input_dim}")
 
-    if config["REWARD_LAST"]:
-        config["REWARD_LAST_SCALE"] = 0.0
-
     # --- 2. Test Environment Setup ---
     test_problem, initial_test_solutions = initialize_test_problem(
         config,
@@ -441,11 +438,6 @@ def main(config: dict) -> None:
             config=config,
             step=epoch + 1,
         )
-
-        config["OUTER_STEPS"] += config[
-            "INCR_STEP"
-        ]  # Increment outer steps for next epoch (SA iterations)
-
         # C. Extract Stats
         actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
             train_stats
@@ -461,11 +453,6 @@ def main(config: dict) -> None:
             current_test_loss = torch.mean(test_results["min_cost"])
             if current_test_loss.item() < a_min_cost:
                 a_min_cost = current_test_loss.item()
-
-            if config["REWARD_LAST"]:
-                config["REWARD_LAST_SCALE"] = min(
-                    config["REWARD_LAST_SCALE"] + config["REWARD_LAST_ADD"], 100
-                )
 
         # E. Early Stopping Check
         if epoch % save_period == 0:

@@ -2,19 +2,9 @@
 
 
 # INIT JZ
-- GROUP: ["CL_3"]
-  CL: [True]
-  MAX_OUTER_STEPS_CL: [200] 
-  MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.02] 
-  CL_TYPE: ["lin"]
-
-- GROUP: ["CL_3"]
-  CL: [True]
-  MAX_OUTER_STEPS_CL: [200] 
-  MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.02, 0.01] 
-  CL_TYPE: ["sig"]
+- GROUP: ["REWARD"]
+  REWARD: ["immediate", "terminal", "sa_aligned", "terminal", "global_best", "step_penalty_init", "step_penalty_16"]
+  CL: [False] # Ablation of curriculum learning
 
 
 
