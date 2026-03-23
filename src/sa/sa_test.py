@@ -66,6 +66,8 @@ def calculate_reward(
     cumulative_cost: torch.Tensor,
     initial_cost: torch.Tensor,
     step: int,
+    total_steps: int,
+    epoch: int,
     last_step: bool = False,
 ) -> torch.Tensor:
     """
@@ -75,9 +77,13 @@ def calculate_reward(
         return torch.zeros_like(actual_improvement).view(-1, 1)
 
     # 1. Weights
+    # If we want a transition within the SA run
+    progress = step / total_steps if total_steps > 0 else 0.0
+    
+    # Optional warmup across epochs (if needed)
     warmup_epochs = config.get("WARMUP_EPOCHS", 0)
-    if warmup_epochs > 0 and step < warmup_epochs:
-        target_weight = step / warmup_epochs
+    if warmup_epochs > 0 and epoch < warmup_epochs:
+        target_weight = epoch / warmup_epochs
         immediate_weight = 1.0 - target_weight
     else:
         target_weight = 1.0
@@ -85,7 +91,7 @@ def calculate_reward(
 
     # 2. Immediate
     reward_immediate = torch.zeros_like(actual_improvement).view(-1, 1)
-    if immediate_weight > 0 or config["REWARD"] == "immediate":
+    if immediate_weight > 0 or config["REWARD"] in ["immediate", "hybrid", "curriculum"]:
         val_imm = (
             normalize(actual_improvement, initial_cost)
             if config["NORMALIZE_REWARD"]
@@ -101,7 +107,7 @@ def calculate_reward(
     reward_target = torch.zeros_like(actual_improvement).view(-1, 1)
     target_mode = config["REWARD"]
 
-    if target_mode == "dact":
+    if target_mode == "dact" or target_mode == "global_best":
         current_step_min = torch.min(new_cost, old_best_cost)
         raw_reward = old_best_cost - current_step_min
         reward_target = torch.where(
@@ -109,6 +115,36 @@ def calculate_reward(
             raw_reward.view(-1, 1),
             torch.zeros_like(raw_reward).view(-1, 1),
         ) * config.get("REWARD_SCALE", 10.0)
+    elif target_mode == "hybrid":
+        current_step_min = torch.min(new_cost, old_best_cost)
+        raw_global = old_best_cost - current_step_min
+        global_reward = torch.where(
+            is_valid.bool().view(-1, 1),
+            raw_global.view(-1, 1),
+            torch.zeros_like(raw_global).view(-1, 1),
+        ) * config.get("REWARD_SCALE", 1.0)
+        
+        alpha = config.get("HYBRID_ALPHA", 0.5)
+        # Combine weighted immediate and global_best
+        reward_target = alpha * reward_immediate + (1 - alpha) * global_reward
+    elif target_mode == "curriculum":
+        current_step_min = torch.min(new_cost, old_best_cost)
+        raw_global = old_best_cost - current_step_min
+        global_reward = torch.where(
+            is_valid.bool().view(-1, 1),
+            raw_global.view(-1, 1),
+            torch.zeros_like(raw_global).view(-1, 1),
+        ) * config.get("REWARD_SCALE", 1.0)
+        
+        # Linear transition from immediate to global
+        reward_target = (1 - progress) * reward_immediate + progress * global_reward
+    elif target_mode == "curriculum_terminal":
+        # Transition from immediate to terminal
+        terminal_part = torch.zeros_like(reward_immediate)
+        if last_step:
+            terminal_part = ((initial_cost - best_cost) / initial_cost).view(-1, 1)
+        
+        reward_target = (1 - progress) * reward_immediate + progress * terminal_part
     elif target_mode == "immediate":
         reward_target = reward_immediate
     elif target_mode == "min_cost":
@@ -116,15 +152,16 @@ def calculate_reward(
     elif target_mode == "primal":
         reward_target = -cumulative_cost.view(-1, 1)
 
+    # Combine with warmup weights if any
     final_reward = (immediate_weight * reward_immediate) + (
         target_weight * reward_target
     )
 
-    if config["REWARD_VALID"]:
+    if config.get("REWARD_VALID", False):
         final_reward[~is_valid.view(-1, 1)] = -1.0
-    if config["REWARD_LAST"] and last_step:
+    if config.get("REWARD_LAST", False) and last_step:
         final_reward = (
-            config["REWARD_LAST_SCALE"] * ((initial_cost - best_cost) / initial_cost)
+            config.get("REWARD_LAST_SCALE", 1.0) * ((initial_cost - best_cost) / initial_cost)
         ).view(-1, 1)
 
     return final_reward
@@ -297,6 +334,8 @@ def sa_test(
                 if cumulative_cost is not None
                 else torch.zeros_like(best_cost),
                 initial_cost,
+                step,
+                total_steps,
                 epoch,
                 step + 1 == total_steps,
             )

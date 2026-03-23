@@ -3,9 +3,9 @@
 
 # INIT JZ
 - GROUP: ["REWARD"]
-  REWARD: ["immediate", "terminal", "sa_aligned", "terminal", "global_best", "step_penalty_init", "step_penalty_16"]
+  REWARD: ["immediate", "terminal", "sa_aligned", "terminal", "global_best", "step_penalty_init", "step_penalty_16","hybrid", "curriculum", "curriculum_terminal"]
   CL: [False] # Ablation of curriculum learning
-
+  TEST_OUTER_STEPS: [100]
 
 
 # - GROUP: [CL_Time_Scaling]
