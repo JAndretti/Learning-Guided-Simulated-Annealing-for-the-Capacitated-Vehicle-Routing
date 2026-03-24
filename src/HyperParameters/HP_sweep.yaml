@@ -3,7 +3,8 @@
 
 # INIT JZ
 - GROUP: ["REWARD3"]
-  REWARD: ["curriculum", "curriculum_terminal"]
+  COMMENT: ["Reward_terminal"]
+  REWARD: ["terminal", "curriculum_terminal"]
   CL: [False] # Ablation of curriculum learning
   TEST_OUTER_STEPS: [100]
 
