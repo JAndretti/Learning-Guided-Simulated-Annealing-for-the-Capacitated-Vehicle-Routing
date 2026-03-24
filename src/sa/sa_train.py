@@ -196,31 +196,37 @@ def calculate_reward(
             if config["NORMALIZE_REWARD"]
             else actual_improvement
         )
-        
+
         imm_reward = torch.where(
             ~is_valid.bool().squeeze(-1),
             -1.5,
             torch.where(actual_improvement == 0, 0.0, val_imm),
         ).view(-1, 1)
-        
+
         global_reward = torch.where(
             improvement_over_best > 0, val_global, torch.zeros_like(val_global)
         ).view(-1, 1)
-        
+
         alpha = config.get("HYBRID_ALPHA", 0.5)
         reward = alpha * imm_reward + (1 - alpha) * global_reward
 
     elif reward_mode == "curriculum":
-        # Transition from sa_aligned to global_best
-        progress = step / total_steps
-        
+        # Transition from sa_aligned to global_best based on epoch progress
+        # total_epochs = config.get("N_EPOCHS", 1)
+        total_epochs = 250
+        progress = (epoch - 1) / max(1, total_epochs - 1)
+
         # Calculate sa_aligned part
         val_imm = (
             normalize(actual_improvement, initial_cost)
             if config["NORMALIZE_REWARD"]
             else actual_improvement
         )
-        is_acc = is_accepted.bool().squeeze(-1) if is_accepted.dim() > 1 else is_accepted.bool()
+        is_acc = (
+            is_accepted.bool().squeeze(-1)
+            if is_accepted.dim() > 1
+            else is_accepted.bool()
+        )
         sa_reward = torch.where(
             is_acc & (actual_improvement > 0),
             val_imm,
@@ -231,7 +237,7 @@ def calculate_reward(
             ),
         )
         sa_part = torch.where(~is_valid.bool().squeeze(-1), -1.5, sa_reward).view(-1, 1)
-        
+
         # Calculate global_best part
         improvement_over_best = old_best_cost - best_cost
         val_global = (
@@ -242,21 +248,27 @@ def calculate_reward(
         global_part = torch.where(
             improvement_over_best > 0, val_global, torch.zeros_like(val_global)
         ).view(-1, 1)
-        
+
         # Linear transition
         reward = (1 - progress) * sa_part + progress * global_part
 
     elif reward_mode == "curriculum_terminal":
-        # Transition from sa_aligned to terminal
-        progress = step / total_steps
-        
+        # Transition from sa_aligned to terminal based on epoch progress
+        # total_epochs = config.get("N_EPOCHS", 1)
+        total_epochs = 250
+        progress = (epoch - 1) / max(1, total_epochs - 1)
+
         # Calculate sa_aligned part
         val_imm = (
             normalize(actual_improvement, initial_cost)
             if config["NORMALIZE_REWARD"]
             else actual_improvement
         )
-        is_acc = is_accepted.bool().squeeze(-1) if is_accepted.dim() > 1 else is_accepted.bool()
+        is_acc = (
+            is_accepted.bool().squeeze(-1)
+            if is_accepted.dim() > 1
+            else is_accepted.bool()
+        )
         sa_reward = torch.where(
             is_acc & (actual_improvement > 0),
             val_imm,
@@ -267,12 +279,12 @@ def calculate_reward(
             ),
         )
         sa_part = torch.where(~is_valid.bool().squeeze(-1), -1.5, sa_reward).view(-1, 1)
-        
+
         # Calculate terminal part
         terminal_part = torch.zeros_like(sa_part)
         if last_step:
             terminal_part = ((initial_cost - best_cost) / initial_cost).view(-1, 1)
-        
+
         # Linear transition
         reward = (1 - progress) * sa_part + progress * terminal_part
 
