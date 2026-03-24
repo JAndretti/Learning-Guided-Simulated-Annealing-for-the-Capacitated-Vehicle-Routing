@@ -2,7 +2,7 @@
 
 
 # INIT JZ
-- GROUP: ["REWARD2"]
+- GROUP: ["REWARD3"]
   REWARD: ["curriculum", "curriculum_terminal"]
   CL: [False] # Ablation of curriculum learning
   TEST_OUTER_STEPS: [100]
