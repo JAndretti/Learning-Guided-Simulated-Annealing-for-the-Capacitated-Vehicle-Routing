@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=LGSA_train
-#SBATCH --account=aik@v100           # aik@a100 / aik@v100 
-#SBATCH --constraint=v100            # a100 / v100
+#SBATCH -A aik@v100           # aik@a100 / aik@v100 
+#SBATCH -C v100            # a100 / v100
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1          # Nombre de GPU
 #SBATCH --gres=gpu:1                 # Doit correspondre à ntasks-per-node
