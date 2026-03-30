@@ -389,6 +389,9 @@ def main(config: dict) -> None:
         config["HEURISTIC"],
         config["SEED"],
         device=device,
+        attn_dim=config.get("ATTN_DIM", 64),
+        attn_num_heads=config.get("ATTN_NUM_HEADS", 4),
+        attn_num_layers=config.get("ATTN_NUM_LAYERS", 1),
     )
     logger.info("Models Initialized")
 

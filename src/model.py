@@ -64,270 +64,6 @@ class SAModel(nn.Module):
                 nn.init.constant_(m.bias, 0.0)
 
 
-class CVRPActorPairs(SAModel):
-    """Actor network for CVRP that selects pairs of nodes to swap."""
-
-    def __init__(
-        self,
-        embed_dim: int = 32,
-        c: int = 22,
-        num_hidden_layers: int = 2,
-        device: str = "cpu",
-        mixed_heuristic: bool = False,
-        method: str = "free",
-    ) -> None:
-        super().__init__(device)
-        self.mixed_heuristic = mixed_heuristic
-        self.method = method
-
-        self.input_dim = c * 2 if mixed_heuristic else c * 2 - 2
-        self.net = create_network(
-            self.input_dim,
-            embed_dim,
-            num_hidden_layers=num_hidden_layers,
-            device=device,
-        )
-
-        self.net.apply(self.init_weights)
-
-    def forward(self, state):
-        """Forward pass computing logits for node pairs."""
-        pair_logits = self.net(state)
-        return pair_logits
-
-    @staticmethod
-    def init_weights(m: nn.Module) -> None:
-        """Initialize weights using Kaiming uniform initialization."""
-        if isinstance(m, nn.Linear):
-            nn.init.kaiming_uniform_(m.weight)
-            if m.bias is not None:
-                m.bias.data.fill_(0.01)
-
-    def sample_from_logits(
-        self, logits: torch.Tensor, greedy: bool = False, one_hot: bool = False
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Sample actions from logits using either greedy or multinomial sampling."""
-        probs = torch.softmax(logits, dim=-1)
-
-        if greedy:
-            smpl = torch.argmax(probs, -1, keepdim=False)
-        else:
-            smpl = torch.multinomial(probs, 1, generator=self.generator)[..., 0]
-
-        taken_probs = probs.gather(1, smpl.view(-1, 1))
-
-        if one_hot:
-            smpl = F.one_hot(smpl, num_classes=logits.shape[-1])[..., None]
-
-        return smpl, torch.log(taken_probs)
-
-    def get_logits(
-        self, state: torch.Tensor, action: torch.Tensor, **kwargs
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute logits and log probabilities for given state and action."""
-        pair_features, idx1, idx2, heuristic_indices = self._prepare_features_and_pairs(
-            state
-        )
-
-        # Forward pass
-        outputs = self.forward(pair_features)
-        logits = outputs[..., 0]
-        probs = torch.softmax(logits, dim=-1)
-        log_probs = torch.log(probs)
-        all_action = (
-            (
-                torch.cat(
-                    [
-                        idx1.unsqueeze(-1).repeat_interleave(2, dim=0),
-                        idx2.unsqueeze(-1).repeat_interleave(2, dim=0),
-                        heuristic_indices.unsqueeze(-1),
-                    ],
-                    dim=-1,
-                )
-                if heuristic_indices is not None
-                else torch.cat([idx1.unsqueeze(-1), idx2.unsqueeze(-1)], dim=-1)
-            ),
-        )
-
-        return log_probs, all_action
-
-    def baseline_sample(
-        self, state: torch.Tensor, **kwargs
-    ) -> Tuple[torch.Tensor, None]:
-        """Generate baseline sample using uniform probabilities."""
-        n_problems, problem_dim, dim = state.shape
-        state = state[:, :, :-2]  # Remove temperature and time
-
-        x, _, *_ = torch.split(state, [1, 2] + [1] * (dim - 5), dim=-1)
-        mask = x.squeeze(-1) != 0
-        x = torch.stack([c[m] for c, m in zip(x, mask)], dim=0)
-
-        idx1, idx2 = torch.triu_indices(x.shape[1], x.shape[1], offset=1)
-        logits = torch.ones(n_problems, idx1.shape[0]).to(self.device)
-        c, _ = self.sample_from_logits(logits, one_hot=False)
-
-        if self.mixed_heuristic:
-            pair_idx = c // 2
-            heuristic_idx = c % 2
-            action = torch.stack(
-                [idx1[pair_idx], idx2[pair_idx], heuristic_idx], dim=-1
-            )
-        else:
-            action = torch.stack([idx1[c], idx2[c]], dim=-1)
-
-        return action, None
-
-    def sample(
-        self, state: torch.Tensor, greedy: bool = False, **kwargs
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Sample an action pair from the current state."""
-        step = 1000
-        if state.shape[0] * state.shape[1] > 1000 * 161:
-            actions = []
-            log_probs_list = []
-            for i in range(0, state.shape[0], step):
-                chunk = state[i : i + step]
-                pair_features, idx1, idx2 = self._prepare_features_and_pairs(chunk)
-                logits = self.forward(pair_features)[..., 0]  # Forward pass
-
-                c, log_probs = self.sample_from_logits(
-                    logits, greedy=greedy, one_hot=False
-                )
-
-                if self.mixed_heuristic:
-                    pair_idx = c // 2
-                    heuristic_idx = c % 2
-                    action = torch.stack(
-                        [idx1[pair_idx], idx2[pair_idx], heuristic_idx], dim=-1
-                    )
-                else:
-                    action = torch.stack([idx1[c], idx2[c]], dim=-1)
-
-                actions.append(action)
-                log_probs_list.append(log_probs)
-
-                # explicitly free memory
-                del pair_features, idx1, idx2, logits, c
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-                # Stack results from all chunks
-            action = torch.cat(actions, dim=0)
-            log_probs = torch.cat(log_probs_list, dim=0)
-        else:
-            pair_features, idx1, idx2 = self._prepare_features_and_pairs(state)
-            logits = self.forward(pair_features)[..., 0]  # Forward pass
-
-            c, log_probs = self.sample_from_logits(logits, greedy=greedy, one_hot=False)
-
-            if self.mixed_heuristic:
-                pair_idx = c // 2
-                heuristic_idx = c % 2
-                action = torch.stack(
-                    [idx1[pair_idx], idx2[pair_idx], heuristic_idx], dim=-1
-                )
-            else:
-                action = torch.stack([idx1[c], idx2[c]], dim=-1)
-        mask = torch.ones_like(logits, dtype=torch.bool)
-        return action, log_probs[..., 0], mask
-
-    def evaluate(
-        self, state: torch.Tensor, action: torch.Tensor, mask: torch.Tensor, **kwargs
-    ) -> torch.Tensor:
-        """Evaluate log probabilities of given actions."""
-        pair_features, idx1, idx2 = self._prepare_features_and_pairs(state)
-        if self.mixed_heuristic:
-            # Find the pair index
-            pair_mask = (idx1 == action[:, 0].unsqueeze(1)) & (
-                idx2 == action[:, 1].unsqueeze(1)
-            )
-            pair_idx = pair_mask.nonzero(as_tuple=True)[1]
-            # Calculate the full action index (pair_idx * 2 + heuristic_idx)
-            action_idx = pair_idx * 2 + action[:, 2]
-        else:
-            action_idx = (idx1 == action[:, 0].unsqueeze(1)) & (
-                idx2 == action[:, 1].unsqueeze(1)
-            )
-            action_idx = action_idx.nonzero(as_tuple=True)[1]
-
-        # Forward pass
-        step = 1000
-        if state.shape[0] * state.shape[1] > 1000 * 161:
-            logits_list = []
-            for i in range(0, state.shape[0], step):
-                chunk = state[i : i + step]
-                pair_features, idx1, idx2 = self._prepare_features_and_pairs(chunk)
-                logits = self.forward(pair_features)[..., 0]  # Forward pass
-                logits_list.append(logits)
-                del pair_features, logits
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            logits = torch.cat(logits_list, dim=0)
-        else:
-            logits = self.forward(pair_features)[..., 0]
-
-        # Compute action probabilities
-        probs = torch.softmax(logits, dim=-1)
-        log_probs = torch.log(probs.gather(1, action_idx.view(-1, 1)))
-        return log_probs[..., 0]
-
-    def _prepare_features_and_pairs(
-        self, state: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Helper method to prepare features and pairs from state."""
-        n_problems, problem_dim, dim = state.shape
-        temp, time = state[:, :, -2], state[:, :, -1]
-        state = state[:, :, :-2]  # Remove temperature and time
-
-        x, coords, *extra_features = torch.split(
-            state, [1, 2] + [1] * (dim - 5), dim=-1
-        )
-
-        # Gather coordinate information
-        coords = coords.gather(1, x.long().expand_as(coords))
-        coords_prev = torch.cat([coords[:, -1:, :], coords[:, :-1, :]], dim=1)
-        coords_next = torch.cat([coords[:, 1:, :], coords[:, :1, :]], dim=1)
-
-        c_state = torch.cat([coords, coords_prev, coords_next] + extra_features, -1)
-
-        if self.method == "rm_depot":
-            mask = x.squeeze(-1) != 0
-            c_state = c_state[mask].view(n_problems, -1, c_state.size(-1))
-
-        # Get all possible pairs
-        idx1, idx2 = torch.triu_indices(
-            c_state.shape[1], c_state.shape[1], offset=1, device=c_state.device
-        )
-        x_pairs_1 = c_state[:, idx1, :]
-        x_pairs_2 = c_state[:, idx2, :]
-
-        # Combine pair features with temperature and time
-        pair_features = torch.cat(
-            [
-                x_pairs_1,
-                x_pairs_2,
-                temp[:, idx1].unsqueeze(-1),
-                time[:, idx1].unsqueeze(-1),
-            ],
-            dim=-1,
-        )
-        if self.mixed_heuristic:
-            # Duplicate each pair for both heuristic options
-            n_pairs = pair_features.shape[1]
-            pair_features = pair_features.repeat_interleave(2, dim=1)
-
-            # Add one-hot encoding for heuristic selection
-            heuristic_indices = torch.arange(2, device=c_state.device).repeat(n_pairs)
-            heuristic_one_hot = F.one_hot(heuristic_indices, num_classes=2).repeat(
-                n_problems, 1, 1
-            )
-
-            # Concatenate the one-hot encoding to the features
-            pair_features = torch.cat([pair_features, heuristic_one_hot], dim=-1)
-
-        return pair_features, idx1, idx2
-
-
 class CVRPActor(SAModel):
     def __init__(
         self,
@@ -846,3 +582,259 @@ class CVRPCriticAttention(nn.Module):
         # Final Value Projection
         value = self.value_head(graph_embedding.squeeze(1))
         return value.squeeze(-1)
+
+
+class CVRPActorAttention(SAModel):
+    """
+    Attention-based actor for CVRP.
+
+    Pipeline per forward call:
+      raw features [N, D, c]
+        -> node_encoder MLP  (ATTN_DIM, NUM_H_LAYERS)            -> [N, D, attn_dim]
+        -> PositionalEncoding                                     -> [N, D, attn_dim]
+        -> MultiheadAttention x num_attn_layers (ATTN_NUM_LAYERS) -> [N, D, attn_dim]
+        -> concat(ctx[i], raw[i])                                -> [N, D, attn_dim + c]
+        -> city1_scorer MLP  (EMBEDDING_DIM, NUM_H_LAYERS)       -> [N, D] logits -> c1
+        -> concat(ctx[c1], ctx[i])                               -> [N, D, 2*attn_dim]
+        -> city2_scorer MLP  (EMBEDDING_DIM, NUM_H_LAYERS)       -> [N, D] logits -> c2
+    """
+
+    def __init__(
+        self,
+        attn_dim: int = 64,
+        embed_dim: int = 32,
+        c: int = 13,
+        num_hidden_layers: int = 1,
+        num_heads: int = 4,
+        num_attn_layers: int = 1,
+        device: str = "cpu",
+        method: str = "free",
+    ) -> None:
+        super().__init__(device)
+        self.method = method
+        self.attn_dim = attn_dim
+        self.c = c
+
+        # Node encoder: c -> attn_dim (all hidden layers use attn_dim)
+        enc_layers = [nn.Linear(c, attn_dim, bias=True, device=device), nn.LeakyReLU()]
+        for _ in range(num_hidden_layers):
+            enc_layers += [
+                nn.Linear(attn_dim, attn_dim, bias=True, device=device),
+                nn.LeakyReLU(),
+            ]
+        self.node_encoder = nn.Sequential(*enc_layers)
+
+        self.pos_encoder = PositionalEncoding(embed_dim=attn_dim).to(device)
+
+        self.attention_layers = nn.ModuleList([
+            nn.MultiheadAttention(
+                embed_dim=attn_dim,
+                num_heads=num_heads,
+                batch_first=True,
+                device=device,
+            )
+            for _ in range(num_attn_layers)
+        ])
+
+        # city1_scorer: concat(ctx[i], raw[i]) = attn_dim + c -> scalar
+        self.city1_scorer = self._build_scorer(
+            attn_dim + c, embed_dim, num_hidden_layers, device
+        )
+
+        # city2_scorer: concat(ctx[c1], ctx[i]) = 2 * attn_dim -> scalar
+        self.city2_scorer = self._build_scorer(
+            2 * attn_dim, embed_dim, num_hidden_layers, device
+        )
+
+        if device != "mps":
+            self.node_encoder.apply(self.init_weights)
+            self.city1_scorer.apply(self.init_weights)
+            nn.init.orthogonal_(self.city1_scorer[-1].weight, gain=0.01)
+            self.city2_scorer.apply(self.init_weights)
+            nn.init.orthogonal_(self.city2_scorer[-1].weight, gain=0.01)
+
+    @staticmethod
+    def _build_scorer(
+        input_dim: int, embed_dim: int, num_hidden_layers: int, device: str
+    ) -> nn.Sequential:
+        """MLP: input_dim -> embed_dim (x num_hidden_layers) -> scalar."""
+        layers = [nn.Linear(input_dim, embed_dim, bias=True, device=device), nn.LeakyReLU()]
+        for _ in range(num_hidden_layers):
+            layers += [
+                nn.Linear(embed_dim, embed_dim, bias=True, device=device),
+                nn.LeakyReLU(),
+            ]
+        layers.append(nn.Linear(embed_dim, 1, bias=False, device=device))
+        return nn.Sequential(*layers)
+
+    def sample_from_logits(
+        self, logits: torch.Tensor, greedy: bool = False, one_hot: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        n_problems, problem_dim = logits.shape
+        probs = torch.softmax(logits, dim=-1)
+        if greedy:
+            smpl = torch.argmax(probs, -1, keepdim=False)
+        else:
+            smpl = torch.multinomial(probs, 1, generator=self.generator)[..., 0]
+        taken_probs = probs.gather(1, smpl.view(-1, 1))
+        if one_hot:
+            smpl = F.one_hot(smpl, num_classes=problem_dim)[..., None]
+        return smpl, torch.log(taken_probs)
+
+    def _encode(
+        self, state: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Shared encoder: runs node encoder + positional encoding + all attention layers.
+
+        Returns:
+            ctx:      [N, D, attn_dim]  per-node context vectors
+            features: [N, D, c]         raw node features (state[:, :, 1:])
+            x:        [N, D, 1]         route ids       (state[:, :, :1])
+        """
+        x = state[:, :, :1]         # [N, D, 1]
+        features = state[:, :, 1:]  # [N, D, c]
+        node_emb = self.node_encoder(features)    # [N, D, attn_dim]
+        node_emb = self.pos_encoder(node_emb)     # [N, D, attn_dim]
+        ctx = node_emb
+        for attn in self.attention_layers:
+            ctx, _ = attn(ctx, ctx, ctx)          # [N, D, attn_dim]
+        return ctx, features, x
+
+    def _logits_c1(self, ctx: torch.Tensor, features: torch.Tensor) -> torch.Tensor:
+        inp = torch.cat([ctx, features], dim=-1)  # [N, D, attn_dim + c]
+        return self.city1_scorer(inp)[..., 0]     # [N, D]
+
+    def _logits_c2(self, ctx: torch.Tensor, c1: torch.Tensor) -> torch.Tensor:
+        arange = torch.arange(ctx.shape[0], device=ctx.device)
+        c1_ctx = ctx[arange, c1]                          # [N, attn_dim]
+        c1_ctx_exp = c1_ctx[:, None, :].expand_as(ctx)   # [N, D, attn_dim]
+        inp = torch.cat([c1_ctx_exp, ctx], dim=-1)        # [N, D, 2*attn_dim]
+        return self.city2_scorer(inp)[..., 0]             # [N, D]
+
+    def sample(
+        self, state: torch.Tensor, greedy: bool = False, problem=CVRP, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        ctx, features, x = self._encode(state)
+        n_problems = state.shape[0]
+
+        # City 1
+        logits = self._logits_c1(ctx, features)
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        if self.method != "rm_depot":
+            tmp_mask = (x != 0).squeeze(-1)
+            logits[~tmp_mask] = -float("inf")
+            logits[:, 0] = -float("inf")
+            logits[:, -1] = -float("inf")
+            mask = tmp_mask
+
+        c1, log_probs_c1 = self.sample_from_logits(logits, greedy=greedy)
+
+        # City 2
+        logits = self._logits_c2(ctx, c1)
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        if self.method == "valid":
+            mask = problem.get_action_mask(solution=x, node_pos=c1)
+            logits[~mask] = -float("inf")
+        else:
+            arange = torch.arange(n_problems, device=logits.device)
+            logits[arange, c1] = -float("inf")
+            if self.method == "free":
+                logits[:, 0] = -float("inf")
+                logits[:, -1] = -float("inf")
+
+        c2, log_probs_c2 = self.sample_from_logits(logits, greedy=greedy)
+
+        action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
+        return action, (log_probs_c1 + log_probs_c2)[..., 0], mask
+
+    def evaluate(
+        self, state: torch.Tensor, action: torch.Tensor, mask: torch.Tensor, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        ctx, features, x = self._encode(state)
+        n_problems = state.shape[0]
+        taken_c1 = action[:, 0]
+        taken_c2 = action[:, 1]
+
+        # City 1
+        logits_c1 = self._logits_c1(ctx, features)
+        valid_mask_c1 = torch.ones_like(logits_c1, dtype=torch.bool)
+        if self.method != "rm_depot":
+            tmp_mask = (x != 0).squeeze(-1)
+            logits_c1[~tmp_mask] = -float("inf")
+            logits_c1[:, 0] = -float("inf")
+            logits_c1[:, -1] = -float("inf")
+            valid_mask_c1 = tmp_mask
+            valid_mask_c1[:, 0] = False
+            valid_mask_c1[:, -1] = False
+
+        probs_c1 = torch.softmax(logits_c1, dim=-1)
+        log_probs_all_c1 = torch.log_softmax(logits_c1, dim=-1)
+        p_log_p_c1 = torch.zeros_like(probs_c1)
+        p_log_p_c1[valid_mask_c1] = probs_c1[valid_mask_c1] * log_probs_all_c1[valid_mask_c1]
+        entropy_c1 = -p_log_p_c1.sum(dim=-1)
+        chosen_log_prob_c1 = log_probs_all_c1.gather(1, taken_c1.view(-1, 1)).squeeze(-1)
+
+        # City 2
+        logits_c2 = self._logits_c2(ctx, taken_c1)
+        valid_mask_c2 = torch.ones_like(logits_c2, dtype=torch.bool)
+        if self.method == "valid":
+            logits_c2[~mask] = -float("inf")
+            valid_mask_c2 = mask
+        else:
+            arange = torch.arange(n_problems, device=logits_c2.device)
+            logits_c2[arange, taken_c1] = -float("inf")
+            valid_mask_c2[arange, taken_c1] = False
+            if self.method == "free":
+                logits_c2[:, 0] = -float("inf")
+                logits_c2[:, -1] = -float("inf")
+                valid_mask_c2[:, 0] = False
+                valid_mask_c2[:, -1] = False
+
+        probs_c2 = torch.softmax(logits_c2, dim=-1)
+        log_probs_all_c2 = torch.log_softmax(logits_c2, dim=-1)
+        p_log_p_c2 = torch.zeros_like(probs_c2)
+        p_log_p_c2[valid_mask_c2] = probs_c2[valid_mask_c2] * log_probs_all_c2[valid_mask_c2]
+        p_log_p_c2 = torch.nan_to_num(p_log_p_c2, nan=0.0)
+        entropy_c2 = -p_log_p_c2.sum(dim=-1)
+        chosen_log_prob_c2 = log_probs_all_c2.gather(1, taken_c2.view(-1, 1)).squeeze(-1)
+
+        return chosen_log_prob_c1 + chosen_log_prob_c2, entropy_c1 + entropy_c2
+
+    def get_logits(
+        self, state: torch.Tensor, action: torch.Tensor, **kwargs
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        ctx, features, _ = self._encode(state)
+        c1 = action[:, 0]
+        log_probs_c1 = torch.log(torch.softmax(self._logits_c1(ctx, features), dim=-1))
+        log_probs_c2 = torch.log(torch.softmax(self._logits_c2(ctx, c1), dim=-1))
+        return log_probs_c1, log_probs_c2
+
+    def baseline_sample(
+        self, state: torch.Tensor, problem=CVRP, **kwargs
+    ) -> Tuple[torch.Tensor, None, torch.Tensor]:
+        n_problems, problem_dim, _ = state.shape
+        x = state[:, :, 0]
+        mask = x != 0
+
+        logits = torch.ones(n_problems, problem_dim, device=self.generator.device)
+        if self.method != "rm_depot":
+            logits[~mask] = -float("inf")
+
+        c1, _ = self.sample_from_logits(logits)
+
+        logits = torch.ones(n_problems, problem_dim, device=self.generator.device)
+        mask = torch.ones_like(logits, dtype=torch.bool)
+        if self.method == "valid":
+            mask = problem.get_action_mask(x.unsqueeze(-1), c1)
+            logits[~mask] = -float("inf")
+        else:
+            arange = torch.arange(n_problems, device=logits.device)
+            logits[arange, c1] = -float("inf")
+            if self.method == "free":
+                logits[:, 0] = -float("inf")
+                logits[:, -1] = -float("inf")
+
+        c2, _ = self.sample_from_logits(logits)
+        action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
+        return action, None, mask

@@ -2,11 +2,61 @@
 
 
 # INIT JZ
-- GROUP: ["REWARD3"]
-  COMMENT: ["Reward_terminal"]
-  REWARD: ["terminal", "curriculum_terminal"]
-  CL: [False] # Ablation of curriculum learning
-  TEST_OUTER_STEPS: [100]
+
+- GROUP: ["test_small_arch"]
+  MODEL: ["seq"]
+  EMBEDDING_DIM: [16]
+  NUM_H_LAYERS: [1]
+  features: {
+    static: True          # coords, angles, depot info
+    topology: True        # prev/next neighbors
+    density5: True       # mean distance to 5 nearest neighbors
+    density10%: True      # mean distance to 10% nearest neighbors
+    density33%: True      # mean distance to 33% nearest neighbors
+    detour: True          # detour
+    centroid: True        # route centroid
+    route_pct: False       # load of the route
+    slack: True          # remaining load of the route
+    node_pct: True       # node demand percentage with route capacity
+    meta: True            # temp, time
+  }
+
+- GROUP: ["test_big_arch_no_features"]
+  MODEL: ["seq"]
+  EMBEDDING_DIM: [64]
+  NUM_H_LAYERS: [2]
+  features: {
+    static: True          # coords, angles, depot info
+    topology: True        # prev/next neighbors
+    density5: False       # mean distance to 5 nearest neighbors
+    density10%: False      # mean distance to 10% nearest neighbors
+    density33%: False      # mean distance to 33% nearest neighbors
+    detour: False          # detour
+    centroid: True        # route centroid
+    route_pct: False       # load of the route
+    slack: True          # remaining load of the route
+    node_pct: True       # node demand percentage with route capacity
+    meta: True            # temp, time
+  }
+
+- GROUP: ["test_attention"]
+  MODEL: ["attention"]
+  EMBEDDING_DIM: [32]
+  NUM_H_LAYERS: [1]
+  features: {
+    static: True          # coords, angles, depot info
+    topology: True        # prev/next neighbors
+    density5: True       # mean distance to 5 nearest neighbors
+    density10%: True      # mean distance to 10% nearest neighbors
+    density33%: True      # mean distance to 33% nearest neighbors
+    detour: True          # detour
+    centroid: True        # route centroid
+    route_pct: False       # load of the route
+    slack: True          # remaining load of the route
+    node_pct: True       # node demand percentage with route capacity
+    meta: True            # temp, time
+  }
+
 
 
 # - GROUP: [CL_Time_Scaling]

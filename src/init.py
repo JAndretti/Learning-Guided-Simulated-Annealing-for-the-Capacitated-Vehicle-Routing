@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import torch
 
-from model import CVRPActor, CVRPActorPairs, CVRPCritic, CVRPCriticAttention, SAModel
+from model import CVRPActor, CVRPActorAttention, CVRPCritic, CVRPCriticAttention, SAModel
 from problem import CVRP
 from sa import sa_test, sa_train
 
@@ -200,6 +200,9 @@ def initialize_models(
     heuristic: Union[str, List[str]],
     seed: int = 0,
     device: str = "cpu",
+    attn_dim: int = 64,
+    attn_num_heads: int = 4,
+    attn_num_layers: int = 1,
 ) -> Tuple[SAModel, Union[CVRPCritic, CVRPCriticAttention]]:
     """
     Initialize actor and critic neural networks.
@@ -222,23 +225,24 @@ def initialize_models(
     # Determine if mixed heuristic is used
     if isinstance(heuristic, str):
         heuristic = [heuristic]
-    use_mixed_heuristic = len(heuristic) > 1
 
-    # Initialize actor model (with or without pairs)
-    if model_type == "pairs":
-        actor = CVRPActorPairs(
-            embed_dim=embedding_dim,
-            c=entry,
-            num_hidden_layers=num_h_layers,
-            device=device,
-            mixed_heuristic=use_mixed_heuristic,
-            method=update_method,
-        )
-    elif model_type == "seq":
+    # Initialize actor model
+    if model_type == "seq":
         actor = CVRPActor(
             embed_dim=embedding_dim,
             c=entry,
             num_hidden_layers=num_h_layers,
+            device=device,
+            method=update_method,
+        )
+    elif model_type == "attention":
+        actor = CVRPActorAttention(
+            attn_dim=attn_dim,
+            embed_dim=embedding_dim,
+            c=entry,
+            num_hidden_layers=num_h_layers,
+            num_heads=attn_num_heads,
+            num_attn_layers=attn_num_layers,
             device=device,
             method=update_method,
         )

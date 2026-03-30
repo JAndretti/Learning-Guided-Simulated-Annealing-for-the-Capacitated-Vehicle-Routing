@@ -250,6 +250,9 @@ def perform_test(
         heuristic=HP["HEURISTIC"],
         seed=cfg["SEED"],
         device=HP["DEVICE"],
+        attn_dim=HP.get("ATTN_DIM", 64),
+        attn_num_heads=HP.get("ATTN_NUM_HEADS", 4),
+        attn_num_layers=HP.get("ATTN_NUM_LAYERS", 1),
     )
 
     # 3. Load weights

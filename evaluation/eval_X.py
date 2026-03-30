@@ -167,6 +167,9 @@ def solve_instance(model_name, instance_path, global_config):
         heuristic=HP["HEURISTIC"],
         seed=args.seed,
         device=args.device,
+        attn_dim=HP.get("ATTN_DIM", 64),
+        attn_num_heads=HP.get("ATTN_NUM_HEADS", 4),
+        attn_num_layers=HP.get("ATTN_NUM_LAYERS", 1),
     )
     actor = load_model(actor, model_name, "actor").to(args.device)
 
@@ -246,7 +249,6 @@ def main():
 
     print(f"Found {len(instance_files)} instances. Starting evaluation...")
     print("Warming up the model on a sample instance...")
-
 
     solve_instance(model_name, instance_files[len(instance_files) // 2], cfg)
 
