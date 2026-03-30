@@ -16,6 +16,8 @@ module purge
 # module load arch/a100                # OBLIGATOIRE pour a100 sinon commenter la ligne
 module load pytorch-gpu/py3/2.8.0  # MUST match the version you used to install
 
+set -x  # affiche les commandes dans les logs
+
 # Force WandB to save locally instead of hanging
 export WANDB_MODE=offline
 
