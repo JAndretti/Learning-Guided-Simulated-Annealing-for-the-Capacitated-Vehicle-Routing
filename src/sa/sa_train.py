@@ -283,7 +283,7 @@ def calculate_reward(
         # Calculate terminal part
         terminal_part = torch.zeros_like(sa_part)
         if last_step:
-            terminal_part = (initial_cost - best_cost).view(-1, 1)
+            terminal_part = ((initial_cost - best_cost) / initial_cost).view(-1, 1)
 
         # Linear transition
         reward = (1 - progress) * sa_part + progress * terminal_part
@@ -296,7 +296,7 @@ def calculate_reward(
 
     elif reward_mode == "terminal":
         if last_step:
-            reward = (initial_cost - best_cost).view(-1, 1)
+            reward = ((initial_cost - best_cost) / initial_cost).view(-1, 1)
 
     return reward
 
