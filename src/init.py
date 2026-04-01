@@ -263,6 +263,7 @@ def initialize_models(
             embed_dim=embedding_dim,
             c=entry,
             num_hidden_layers=num_h_layers,
+            num_heads=attn_num_heads,
             device=device,
         )
     else:

@@ -2,7 +2,7 @@
 PROJECT: "LG-SA" # Project name
 GROUP: "" # Experimentation group
 COMMENT: ""
-LOG: True # Enable or disable logging with WandB
+LOG: False # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
@@ -51,7 +51,7 @@ EMBEDDING_DIM: 32 # Embedding dimension for MLP scorer hidden layers
 NUM_H_LAYERS: 1 # Number of hidden layers in MLP components
 ATTN_DIM: 64 # Embedding dim for node encoder and attention (MODEL: attention only)
 ATTN_NUM_HEADS: 4 # Number of attention heads; ATTN_DIM must be divisible by this
-ATTN_NUM_LAYERS: 1 # Number of stacked MultiheadAttention layers
+ATTN_NUM_LAYERS: 2 # Number of stacked MultiheadAttention layers
 
 # =============== Training ===============
 N_EPOCHS: 1000 # Total number of training epochs

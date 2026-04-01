@@ -494,6 +494,7 @@ class CVRPCriticAttention(nn.Module):
         embed_dim: int,
         c: int = 13,
         num_hidden_layers: int = 2,
+        num_heads: int = 4,
         device: str = "cpu",
     ) -> None:
         super().__init__()
@@ -518,13 +519,14 @@ class CVRPCriticAttention(nn.Module):
         # Initializes the mathematical positional embeddings
         self.pos_encoder = PositionalEncoding(embed_dim=embed_dim).to(device)
 
-        # 2. Attention Pooling
-        # This replaces the simple .mean()
+        # 2. Attention Pooling (pre-norm residual)
         self.attention_pool = nn.MultiheadAttention(
             embed_dim=embed_dim,
-            num_heads=8,  # 8 heads provides stable gradients
+            num_heads=num_heads,
             batch_first=True,
         )
+        self.attn_norm = nn.LayerNorm(embed_dim).to(device)
+        self.kv_norm = nn.LayerNorm(embed_dim).to(device)
 
         # 3. Glimpse Query
         # A learnable vector that asks: "What is the total value of this graph?"
@@ -573,11 +575,14 @@ class CVRPCriticAttention(nn.Module):
 
         node_embeddings = self.pos_encoder(node_embeddings)
 
-        # Attention Pooling
+        # Attention Pooling (pre-norm residual)
         query = self.glimpse_query.expand(batch_size, -1, -1)
-        graph_embedding, _ = self.attention_pool(
-            query, node_embeddings, node_embeddings
+        attn_out, _ = self.attention_pool(
+            self.attn_norm(query),
+            self.kv_norm(node_embeddings),
+            self.kv_norm(node_embeddings),
         )
+        graph_embedding = query + attn_out
 
         # Final Value Projection
         value = self.value_head(graph_embedding.squeeze(1))
@@ -636,14 +641,19 @@ class CVRPActorAttention(SAModel):
             for _ in range(num_attn_layers)
         ])
 
+        self.layer_norms = nn.ModuleList([
+            nn.LayerNorm(attn_dim).to(device)
+            for _ in range(num_attn_layers)
+        ])
+
         # city1_scorer: concat(ctx[i], raw[i]) = attn_dim + c -> scalar
         self.city1_scorer = self._build_scorer(
             attn_dim + c, embed_dim, num_hidden_layers, device
         )
 
-        # city2_scorer: concat(ctx[c1], ctx[i]) = 2 * attn_dim -> scalar
+        # city2_scorer: concat(c1_ctx, c1_raw, candidate_ctx, candidate_raw) = 2*attn_dim + 2*c -> scalar
         self.city2_scorer = self._build_scorer(
-            2 * attn_dim, embed_dim, num_hidden_layers, device
+            2 * attn_dim + 2 * c, embed_dim, num_hidden_layers, device
         )
 
         if device != "mps":
@@ -697,20 +707,28 @@ class CVRPActorAttention(SAModel):
         node_emb = self.node_encoder(features)    # [N, D, attn_dim]
         node_emb = self.pos_encoder(node_emb)     # [N, D, attn_dim]
         ctx = node_emb
-        for attn in self.attention_layers:
-            ctx, _ = attn(ctx, ctx, ctx)          # [N, D, attn_dim]
+        for attn, norm in zip(self.attention_layers, self.layer_norms):
+            ctx_normed = norm(ctx)
+            attn_out, _ = attn(ctx_normed, ctx_normed, ctx_normed)
+            ctx = ctx + attn_out                  # [N, D, attn_dim]
         return ctx, features, x
 
     def _logits_c1(self, ctx: torch.Tensor, features: torch.Tensor) -> torch.Tensor:
         inp = torch.cat([ctx, features], dim=-1)  # [N, D, attn_dim + c]
         return self.city1_scorer(inp)[..., 0]     # [N, D]
 
-    def _logits_c2(self, ctx: torch.Tensor, c1: torch.Tensor) -> torch.Tensor:
+    def _logits_c2(
+        self, ctx: torch.Tensor, c1: torch.Tensor, features: torch.Tensor
+    ) -> torch.Tensor:
         arange = torch.arange(ctx.shape[0], device=ctx.device)
-        c1_ctx = ctx[arange, c1]                          # [N, attn_dim]
-        c1_ctx_exp = c1_ctx[:, None, :].expand_as(ctx)   # [N, D, attn_dim]
-        inp = torch.cat([c1_ctx_exp, ctx], dim=-1)        # [N, D, 2*attn_dim]
-        return self.city2_scorer(inp)[..., 0]             # [N, D]
+        c1_ctx = ctx[arange, c1]                                              # [N, attn_dim]
+        c1_raw = features[arange, c1]                                         # [N, c]
+        c1_ctx_exp = c1_ctx[:, None, :].expand_as(ctx)                        # [N, D, attn_dim]
+        c1_raw_exp = c1_raw[:, None, :].expand(
+            ctx.shape[0], ctx.shape[1], features.shape[-1]
+        )                                                                     # [N, D, c]
+        inp = torch.cat([c1_ctx_exp, c1_raw_exp, ctx, features], dim=-1)     # [N, D, 2*attn_dim + 2*c]
+        return self.city2_scorer(inp)[..., 0]                                 # [N, D]
 
     def sample(
         self, state: torch.Tensor, greedy: bool = False, problem=CVRP, **kwargs
@@ -731,7 +749,7 @@ class CVRPActorAttention(SAModel):
         c1, log_probs_c1 = self.sample_from_logits(logits, greedy=greedy)
 
         # City 2
-        logits = self._logits_c2(ctx, c1)
+        logits = self._logits_c2(ctx, c1, features)
         mask = torch.ones_like(logits, dtype=torch.bool)
         if self.method == "valid":
             mask = problem.get_action_mask(solution=x, node_pos=c1)
@@ -776,7 +794,7 @@ class CVRPActorAttention(SAModel):
         chosen_log_prob_c1 = log_probs_all_c1.gather(1, taken_c1.view(-1, 1)).squeeze(-1)
 
         # City 2
-        logits_c2 = self._logits_c2(ctx, taken_c1)
+        logits_c2 = self._logits_c2(ctx, taken_c1, features)
         valid_mask_c2 = torch.ones_like(logits_c2, dtype=torch.bool)
         if self.method == "valid":
             logits_c2[~mask] = -float("inf")
@@ -807,7 +825,7 @@ class CVRPActorAttention(SAModel):
         ctx, features, _ = self._encode(state)
         c1 = action[:, 0]
         log_probs_c1 = torch.log(torch.softmax(self._logits_c1(ctx, features), dim=-1))
-        log_probs_c2 = torch.log(torch.softmax(self._logits_c2(ctx, c1), dim=-1))
+        log_probs_c2 = torch.log(torch.softmax(self._logits_c2(ctx, c1, features), dim=-1))
         return log_probs_c1, log_probs_c2
 
     def baseline_sample(
