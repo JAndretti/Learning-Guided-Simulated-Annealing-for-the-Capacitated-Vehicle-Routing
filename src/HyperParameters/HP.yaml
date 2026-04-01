@@ -2,7 +2,7 @@
 PROJECT: "LG-SA" # Project name
 GROUP: "" # Experimentation group
 COMMENT: ""
-LOG: False # Enable or disable logging with WandB
+LOG: True # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
