@@ -622,11 +622,11 @@ class CVRPActorAttention(SAModel):
 
         # Node encoder: c -> attn_dim (all hidden layers use attn_dim)
         enc_layers = [nn.Linear(c, attn_dim, bias=True, device=device), nn.LeakyReLU()]
-        for _ in range(num_hidden_layers):
-            enc_layers += [
-                nn.Linear(attn_dim, attn_dim, bias=True, device=device),
-                nn.LeakyReLU(),
-            ]
+        # for _ in range(num_hidden_layers):
+        #     enc_layers += [
+        #         nn.Linear(attn_dim, attn_dim, bias=True, device=device),
+        #         nn.LeakyReLU(),
+        #     ]
         self.node_encoder = nn.Sequential(*enc_layers)
 
         self.pos_encoder = PositionalEncoding(embed_dim=attn_dim).to(device)
@@ -653,7 +653,7 @@ class CVRPActorAttention(SAModel):
 
         # city2_scorer: concat(c1_ctx, c1_raw, candidate_ctx, candidate_raw) = 2*attn_dim + 2*c -> scalar
         self.city2_scorer = self._build_scorer(
-            2 * attn_dim + 2 * c, embed_dim, num_hidden_layers, device
+            2 * attn_dim + 2 * c, 2*embed_dim, num_hidden_layers, device
         )
 
         if device != "mps":
