@@ -81,6 +81,8 @@ scripts/
 !scripts/dl_model.sh
 !scripts/sync_wandb.sh
 !scripts/train_lgsa.slurm
+!scripts/script.sh
+
 
 # Claude files
 *claude*
@@ -88,3 +90,5 @@ scripts/
 *docs*
 
 *test*
+
+latex/
