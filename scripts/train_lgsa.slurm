@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:1                 # Doit correspondre à ntasks-per-node
 #SBATCH --cpus-per-task=10           # 8 CPUs par GPU sur A100 / 10 sur V100
 #SBATCH --hint=nomultithread
-#SBATCH --time=10:00:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
+#SBATCH --time=00:15:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
 #SBATCH --output=logs/lgsa_%j.out
 #SBATCH --error=logs/lgsa_%j.out
 
@@ -30,4 +30,4 @@ export TQDM_MININTERVAL=30
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
 rm -rf wandb/LG-SA/wandb
-srun uv run python launch_HP_sweep.py
+srun uv run python evalualtion/eval.py --FOLDER 'test_attention2' --no_baseline
