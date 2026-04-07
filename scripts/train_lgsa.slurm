@@ -30,4 +30,4 @@ export TQDM_MININTERVAL=30
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
 rm -rf wandb/LG-SA/wandb
-srun uv run python evaluation/eval.py --FOLDER 'test_attention2' --no_baseline
+srun uv run python evaluation/eval.py --FOLDER 'test_attention2' --no-baseline
