@@ -45,6 +45,9 @@ def set_seed(seed=0):
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU.
 
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
 
 # Load model weights
 def extract_loss(filename):

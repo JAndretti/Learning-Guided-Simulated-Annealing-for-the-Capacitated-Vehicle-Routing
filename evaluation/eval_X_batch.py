@@ -15,7 +15,7 @@ from tqdm import tqdm
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from func import init_problem_parameters, load_model, set_seed
-from init import initialize_models, test_model
+from init import initialize_models, inf_test_model
 from problem import CVRP
 from utils import setup_logging
 
@@ -27,7 +27,7 @@ parser.add_argument("--DATA_PATH", type=str, default="bdd/X")
 parser.add_argument("--INIT", type=str, default="random")
 parser.add_argument("--OUTER_STEPS", type=int, default=10000)
 parser.add_argument("--seed", type=int, default=1234)
-parser.add_argument("--device", type=str, default="cpu")
+parser.add_argument("--device", type=str, default="cuda")
 parser.add_argument("--mode", type=str, default="bucket", choices=["bucket", "global"])
 parser.add_argument("--n_buckets", type=int, default=5)
 parser.add_argument("--batch_size", type=str, default="all")
@@ -137,11 +137,24 @@ def pad_instances_to_N(instances, max_N, device):
 
 def extract_instance_cost(solution, actual_N, raw_coords):
     """
-    Remove ghost node indices (>= actual_N) from the solution and compute
-    the CVRPLib integer cost using raw (unnormalized) coordinates.
+    Collapse consecutive depot visits
+    into one, then ensure the tour starts and ends at the depot (0).
     """
-    sol_clean = [int(x) for x in solution if int(x) < actual_N]
-    return calculate_cvrplib_cost(sol_clean, raw_coords)
+
+    # Collapse consecutive 0s
+    deduped = []
+    for val in solution:
+        if val == 0 and deduped and deduped[-1] == 0:
+            continue
+        deduped.append(val)
+
+    # Ensure starts and ends with depot
+    if not deduped or deduped[0] != 0:
+        deduped.insert(0, 0)
+    if deduped[-1] != 0:
+        deduped.append(0)
+
+    return calculate_cvrplib_cost(deduped, raw_coords)
 
 
 def solve_bucket(bucket, bucket_id, max_N, actor, HP, args):
@@ -167,7 +180,7 @@ def solve_bucket(bucket, bucket_id, max_N, actor, HP, args):
         init_x = problem.generate_init_state(args.INIT, False)
 
         t0 = time.time()
-        result = test_model(
+        result = inf_test_model(
             actor=actor,
             problem=problem,
             initial_solutions=init_x,
