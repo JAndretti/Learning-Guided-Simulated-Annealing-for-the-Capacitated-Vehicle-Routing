@@ -15,7 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "s
 
 from func import init_problem_parameters, load_model, set_seed, warmup_cuda
 
-from init import initialize_models, test_model
+from init import inf_test_model, initialize_models
 from problem import CVRP
 from utils import setup_logging
 
@@ -179,7 +179,7 @@ def solve_batch(model_name, instance_files, global_config):
     warmup_cuda()
 
     start_time = time.time()
-    results = test_model(
+    results = inf_test_model(
         actor=actor,
         problem=problem,
         initial_solutions=init_x,
@@ -269,6 +269,11 @@ def main():
         # Save Results
         df = pd.DataFrame(final_results)
         out_file = os.path.join(base_path, "queiroga_xml_results.csv")
+        counter = 1
+        while os.path.exists(out_file):
+            name, ext = os.path.splitext(out_file)
+            out_file = f"{name.rsplit('_', 1)[0]}_results_{counter}{ext}"
+            counter += 1
         df.to_csv(out_file, index=False)
 
         print("\n--- Summary ---")

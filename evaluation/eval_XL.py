@@ -19,7 +19,7 @@ from func import (
     set_seed,
 )
 
-from init import initialize_models, test_model
+from init import inf_test_model, initialize_models
 from problem import CVRP
 from utils import setup_logging
 
@@ -156,7 +156,7 @@ def solve_instance(model_name, instance_path, global_config):
     HP["TEST_OUTER_STEPS"] = args.OUTER_STEPS
 
     start_time = time.time()
-    results = test_model(
+    results = inf_test_model(
         actor=actor,
         problem=problem,
         initial_solutions=init_x,
@@ -248,6 +248,11 @@ def main():
 
     # Updated output file name
     out_file = os.path.join(base_path, "cvrplib_XL_results.csv")
+    counter = 1
+    while os.path.exists(out_file):
+        name, ext = os.path.splitext(out_file)
+        out_file = f"{name.rsplit('_', 1)[0]}_results_{counter}{ext}"
+        counter += 1
     df.to_csv(out_file, index=False)
 
     print("\n--- Summary ---")
