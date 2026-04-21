@@ -141,6 +141,9 @@ def extract_instance_cost(solution, actual_N, raw_coords):
     into one, then ensure the tour starts and ends at the depot (0).
     """
 
+    # Map ghost/padding nodes (indices >= actual_N) back to depot
+    solution = [v if v < actual_N else 0 for v in solution]
+
     # Collapse consecutive 0s
     deduped = []
     for val in solution:
@@ -178,6 +181,21 @@ def solve_bucket(bucket, bucket_id, max_N, actor, HP, args):
 
         problem.generate_params(coords, demands, capacities)
         init_x = problem.generate_init_state(args.INIT, False)
+
+        # Compact each solution: ghost nodes (index >= actual_N) scattered by the
+        # init heuristic act as extra depot separators and corrupt route-based
+        # features. Move them to the end as plain zeros so the real tour is
+        # contiguous and SA never sees them as valid move targets.
+        for i, inst in enumerate(mini_batch):
+            actual_N = inst["n_nodes"]
+            sol = init_x[i, :, 0]
+            is_real = (sol == 0) | (sol < actual_N)
+            real_part = sol[is_real]
+            n_ghost = sol.shape[0] - real_part.shape[0]
+            if n_ghost > 0:
+                padding = torch.zeros(n_ghost, dtype=sol.dtype, device=sol.device)
+                init_x[i, :, 0] = torch.cat([real_part, padding])
+        problem.init_parameters(init_x)
 
         t0 = time.time()
         result = inf_test_model(
@@ -297,14 +315,34 @@ def main():
             )
 
     df = pd.DataFrame(all_results)
+
+    valid_gaps = df["Gap_Percent"].dropna()
+    gap_small = df.loc[df["Nodes"] < 330, "Gap_Percent"].dropna()
+    gap_large = df.loc[df["Nodes"] > 330, "Gap_Percent"].dropna()
+
+    summary_rows = pd.DataFrame([
+        {"Instance": "Avg. gap (%)",          "Gap_Percent": valid_gaps.mean() if not valid_gaps.empty else float("nan")},
+        {"Instance": "Avg. gap (%) (n<330)",  "Gap_Percent": gap_small.mean()  if not gap_small.empty  else float("nan")},
+        {"Instance": "Avg. gap (%) (n>330)",  "Gap_Percent": gap_large.mean()  if not gap_large.empty  else float("nan")},
+    ])
+    df = pd.concat([df, summary_rows], ignore_index=True)
+
     out_file = os.path.join(base_path, "cvrplib_X_batch_results.csv")
+    if os.path.exists(out_file):
+        counter = 2
+        while os.path.exists(os.path.join(base_path, f"cvrplib_X_batch_results_{counter}.csv")):
+            counter += 1
+        out_file = os.path.join(base_path, f"cvrplib_X_batch_results_{counter}.csv")
     df.to_csv(out_file, index=False)
 
     print("\n--- Summary ---")
     print(f"Results saved to {out_file}")
-    valid_gaps = df["Gap_Percent"].dropna()
     if not valid_gaps.empty:
-        print(f"Average Gap: {valid_gaps.mean():.2f}%")
+        print(f"Average Gap:        {valid_gaps.mean():.2f}%")
+    if not gap_small.empty:
+        print(f"Average Gap (n<330): {gap_small.mean():.2f}%")
+    if not gap_large.empty:
+        print(f"Average Gap (n>330): {gap_large.mean():.2f}%")
 
 
 if __name__ == "__main__":

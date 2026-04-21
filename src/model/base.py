@@ -142,6 +142,7 @@ class PositionalEncoding(nn.Module):
     Standard Sinusoidal Positional Encoding.
     Injects information about the relative or absolute position of the nodes in the sequence.
     """
+
     pe: torch.Tensor
 
     def __init__(self, embed_dim: int, max_len: int = 5000) -> None:

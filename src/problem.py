@@ -174,9 +174,17 @@ class CVRP(Problem):
             # Pre-compute static geometric features
             self.angles = calculate_client_angles(self.coords)
             self.matrix = calculate_distance_matrix(self.coords)
-            self.mean_dist_5 = calculate_knn_isolation(self.matrix, k=5)
-            self.mean_dist_10 = calculate_knn_isolation(self.matrix, k=self.dim // 10)
-            self.mean_dist_33 = calculate_knn_isolation(self.matrix, k=self.dim // 3)
+            # Mask ghost/padding nodes (demand==0, index>0) from the distance matrix
+            # so they can never appear as KNN neighbours. Real depot (index 0) is kept.
+            real_counts = (self.demands > 0).sum(dim=1) + 1  # customers + depot [B]
+            min_real = int(real_counts.min().item())
+            is_ghost = (self.demands == 0)
+            is_ghost[:, 0] = False  # keep real depot
+            masked_matrix = self.matrix.masked_fill(is_ghost.unsqueeze(1), float("inf"))
+
+            self.mean_dist_5  = calculate_knn_isolation(masked_matrix, k=5)
+            self.mean_dist_10 = calculate_knn_isolation(masked_matrix, k=max(1, min_real // 10))
+            self.mean_dist_33 = calculate_knn_isolation(masked_matrix, k=max(1, min_real // 3))
 
             # Normalize distances from depot [0, 1]
             self.dist_to_depot = self.matrix[:, 0, 0:]
