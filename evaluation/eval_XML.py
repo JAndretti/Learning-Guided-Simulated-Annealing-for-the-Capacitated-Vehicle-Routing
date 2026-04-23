@@ -272,7 +272,7 @@ def main():
         counter = 1
         while os.path.exists(out_file):
             name, ext = os.path.splitext(out_file)
-            out_file = f"{name.rsplit('_', 1)[0]}_results_{counter}{ext}"
+            out_file = f"{name.rsplit('_', 1)[0]}_{counter}{ext}"
             counter += 1
         df.to_csv(out_file, index=False)
 
