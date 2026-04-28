@@ -17,11 +17,10 @@ dependencies = [
     "tqdm>=4.67.1",
     "vrplib>=1.5.1",
     "wandb>=0.19.9",
-    "torch==2.9.1", 
-    "torchvision>=0.24.1",
-    "torchaudio>=2.9.1",
-    "torch-geometric>=2.7.0",
     "py7zr>=1.0.0",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "torchaudio>=2.11.0",
 ]
 
 [constraint-dependencies]

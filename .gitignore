@@ -92,3 +92,5 @@ scripts/
 *test*
 
 latex/
+
+uv.toml
