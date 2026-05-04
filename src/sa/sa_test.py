@@ -79,7 +79,7 @@ def calculate_reward(
     # 1. Weights
     # If we want a transition within the SA run
     progress = step / total_steps if total_steps > 0 else 0.0
-    
+
     # Optional warmup across epochs (if needed)
     warmup_epochs = config.get("WARMUP_EPOCHS", 0)
     if warmup_epochs > 0 and epoch < warmup_epochs:
@@ -91,7 +91,11 @@ def calculate_reward(
 
     # 2. Immediate
     reward_immediate = torch.zeros_like(actual_improvement).view(-1, 1)
-    if immediate_weight > 0 or config["REWARD"] in ["immediate", "hybrid", "curriculum"]:
+    if immediate_weight > 0 or config["REWARD"] in [
+        "immediate",
+        "hybrid",
+        "curriculum",
+    ]:
         val_imm = (
             normalize(actual_improvement, initial_cost)
             if config["NORMALIZE_REWARD"]
@@ -123,7 +127,7 @@ def calculate_reward(
             raw_global.view(-1, 1),
             torch.zeros_like(raw_global).view(-1, 1),
         ) * config.get("REWARD_SCALE", 1.0)
-        
+
         alpha = config.get("HYBRID_ALPHA", 0.5)
         # Combine weighted immediate and global_best
         reward_target = alpha * reward_immediate + (1 - alpha) * global_reward
@@ -135,7 +139,7 @@ def calculate_reward(
             raw_global.view(-1, 1),
             torch.zeros_like(raw_global).view(-1, 1),
         ) * config.get("REWARD_SCALE", 1.0)
-        
+
         # Linear transition from immediate to global
         reward_target = (1 - progress) * reward_immediate + progress * global_reward
     elif target_mode == "curriculum_terminal":
@@ -143,7 +147,7 @@ def calculate_reward(
         terminal_part = torch.zeros_like(reward_immediate)
         if last_step:
             terminal_part = ((initial_cost - best_cost) / initial_cost).view(-1, 1)
-        
+
         reward_target = (1 - progress) * reward_immediate + progress * terminal_part
     elif target_mode == "immediate":
         reward_target = reward_immediate
@@ -161,7 +165,8 @@ def calculate_reward(
         final_reward[~is_valid.view(-1, 1)] = -1.0
     if config.get("REWARD_LAST", False) and last_step:
         final_reward = (
-            config.get("REWARD_LAST_SCALE", 1.0) * ((initial_cost - best_cost) / initial_cost)
+            config.get("REWARD_LAST_SCALE", 1.0)
+            * ((initial_cost - best_cost) / initial_cost)
         ).view(-1, 1)
 
     return final_reward
@@ -186,7 +191,7 @@ def sa_test(
     epoch: int = 0,
     device: str = "",
     desc_tqdm: str = "Simulated Annealing Progress",
-) -> Dict[str, torch.Tensor]:
+) -> Dict[str, torch.Tensor | None | float | float]:
 
     if device == "":
         device = str(initial_solution.device)
