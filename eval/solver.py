@@ -56,6 +56,7 @@ def build_actor(
     input_dim: int,
     device: str,
     seed: int,
+    dtype: torch.dtype = torch.float32,
 ) -> nn.Module:
     """
     Build and return the actor with loaded weights in eval mode.
@@ -78,6 +79,7 @@ def build_actor(
     )
     actor = _load_weights(actor, model_path)
     actor = actor.to(device)
+    actor = actor.to(dtype)
     actor.eval()
     return actor
 
@@ -104,6 +106,7 @@ def run_lgsa(
     outer_steps: int,
     baseline: bool = False,
     greedy: bool = False,
+    dtype: torch.dtype = torch.float32,
 ) -> dict:
     """
     Run LGSA inference.
@@ -119,4 +122,24 @@ def run_lgsa(
         config=hp,
         baseline=baseline,
         greedy=greedy,
+        dtype=dtype,
     )
+
+
+# 8 isometries of the unit square (dihedral group D4).
+# All preserve pairwise Euclidean distances: ‖aug(pᵢ)−aug(pⱼ)‖ = ‖pᵢ−pⱼ‖.
+AUGMENTATIONS = [
+    lambda p: p,                                                        # identity
+    lambda p: torch.stack([1 - p[..., 0],     p[..., 1]], dim=-1),     # flip x
+    lambda p: torch.stack([    p[..., 0], 1 - p[..., 1]], dim=-1),     # flip y
+    lambda p: torch.stack([1 - p[..., 0], 1 - p[..., 1]], dim=-1),    # flip both
+    lambda p: torch.stack([    p[..., 1],     p[..., 0]], dim=-1),     # swap xy
+    lambda p: torch.stack([1 - p[..., 1],     p[..., 0]], dim=-1),    # swap + flip x
+    lambda p: torch.stack([    p[..., 1], 1 - p[..., 0]], dim=-1),    # swap + flip y
+    lambda p: torch.stack([1 - p[..., 1], 1 - p[..., 0]], dim=-1),   # swap + flip both
+]
+
+
+def augment_coords(coords: torch.Tensor, k: int) -> torch.Tensor:
+    """Apply the k-th dihedral augmentation to a coordinate tensor of shape [..., 2]."""
+    return AUGMENTATIONS[k](coords)

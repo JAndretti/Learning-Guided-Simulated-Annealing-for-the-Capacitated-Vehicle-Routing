@@ -191,6 +191,7 @@ def sa_test(
     epoch: int = 0,
     device: str = "",
     desc_tqdm: str = "Simulated Annealing Progress",
+    dtype: torch.dtype = torch.float32,
 ) -> Dict[str, torch.Tensor | None | float | float]:
 
     if device == "":
@@ -213,20 +214,20 @@ def sa_test(
     current_solution = initial_solution.clone()
     best_solution = initial_solution.clone()
 
-    current_cost = problem.cost(initial_solution)
+    current_cost = problem.cost(initial_solution).to(dtype)
     best_cost = current_cost.clone()
     initial_cost = current_cost.clone()
 
     # Needed only for specific reward calculations
     cumulative_cost = (
-        torch.ones_like(best_cost)
+        torch.ones_like(best_cost).to(dtype)
         if (replay_buffer is not None and config["REWARD"] == "primal")
         else None
     )
 
     # Temperature Setup
     current_temp = torch.tensor([1.0], device=device).repeat(current_cost.shape[0])
-    current_temp = scale_between(current_temp, config["STOP_TEMP"], config["INIT_TEMP"])
+    current_temp = scale_between(current_temp, config["STOP_TEMP"], config["INIT_TEMP"]).to(dtype)
 
     # Initial State
     normalized_temp = scale_to_unit(
@@ -241,7 +242,7 @@ def sa_test(
                 normalized_temp,
                 torch.tensor(1.0, device=device),
             )
-        ).to(device)
+        ).to(device).to(dtype)
 
     # Loop
     progress_bar = tqdm(
@@ -266,7 +267,7 @@ def sa_test(
         # 2. Update & Evaluate
         sol_components, *_ = problem.from_state(current_state)
         proposed_sol, is_valid = problem.update(sol_components, action)
-        proposed_cost = problem.cost(proposed_sol)
+        proposed_cost = problem.cost(proposed_sol).to(dtype)
 
         cost_improvement = current_cost - proposed_cost
 
@@ -314,7 +315,7 @@ def sa_test(
             cumulative_cost += best_cost / initial_cost
 
         # 6. Next Temperature & State
-        next_temp = scheduler.step(step).to(device).repeat(current_solution.shape[0])
+        next_temp = scheduler.step(step).to(device).repeat(current_solution.shape[0]).to(dtype)
         current_temp = next_temp
 
         adv = torch.tensor(1 - (step / total_steps), device=device)
@@ -324,7 +325,7 @@ def sa_test(
         else:
             next_state = problem.to_state(
                 *problem.build_state_components(current_solution, model_temp, adv)
-            ).to(device)
+            ).to(device).to(dtype)
 
         # 7. RL Reward (Only calculate if we are training/buffering)
         if replay_buffer is not None:
