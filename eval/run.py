@@ -47,9 +47,26 @@ parser.add_argument(
         else "cpu"
     ),
 )
+parser.add_argument(
+    "--dtype",
+    type=str,
+    default="float32",
+    choices=["float32", "bfloat16", "float16"],
+    help="Floating-point precision for the full SA loop",
+)
 
 if handler is not None:
     handler.add_args(parser)
 args = parser.parse_args()
+
+_DTYPE_MAP = {
+    "float32": torch.float32,
+    "bfloat16": torch.bfloat16,
+    "float16": torch.float16,
+}
+args.torch_dtype = _DTYPE_MAP[args.dtype]
+
+if handler is None:
+    parser.error("argument --dataset is required")
 
 handler.run(args)

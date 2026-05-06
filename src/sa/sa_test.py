@@ -79,7 +79,7 @@ def calculate_reward(
     # 1. Weights
     # If we want a transition within the SA run
     progress = step / total_steps if total_steps > 0 else 0.0
-    
+
     # Optional warmup across epochs (if needed)
     warmup_epochs = config.get("WARMUP_EPOCHS", 0)
     if warmup_epochs > 0 and epoch < warmup_epochs:
@@ -91,7 +91,11 @@ def calculate_reward(
 
     # 2. Immediate
     reward_immediate = torch.zeros_like(actual_improvement).view(-1, 1)
-    if immediate_weight > 0 or config["REWARD"] in ["immediate", "hybrid", "curriculum"]:
+    if immediate_weight > 0 or config["REWARD"] in [
+        "immediate",
+        "hybrid",
+        "curriculum",
+    ]:
         val_imm = (
             normalize(actual_improvement, initial_cost)
             if config["NORMALIZE_REWARD"]
@@ -123,7 +127,7 @@ def calculate_reward(
             raw_global.view(-1, 1),
             torch.zeros_like(raw_global).view(-1, 1),
         ) * config.get("REWARD_SCALE", 1.0)
-        
+
         alpha = config.get("HYBRID_ALPHA", 0.5)
         # Combine weighted immediate and global_best
         reward_target = alpha * reward_immediate + (1 - alpha) * global_reward
@@ -135,7 +139,7 @@ def calculate_reward(
             raw_global.view(-1, 1),
             torch.zeros_like(raw_global).view(-1, 1),
         ) * config.get("REWARD_SCALE", 1.0)
-        
+
         # Linear transition from immediate to global
         reward_target = (1 - progress) * reward_immediate + progress * global_reward
     elif target_mode == "curriculum_terminal":
@@ -143,7 +147,7 @@ def calculate_reward(
         terminal_part = torch.zeros_like(reward_immediate)
         if last_step:
             terminal_part = ((initial_cost - best_cost) / initial_cost).view(-1, 1)
-        
+
         reward_target = (1 - progress) * reward_immediate + progress * terminal_part
     elif target_mode == "immediate":
         reward_target = reward_immediate
@@ -161,7 +165,8 @@ def calculate_reward(
         final_reward[~is_valid.view(-1, 1)] = -1.0
     if config.get("REWARD_LAST", False) and last_step:
         final_reward = (
-            config.get("REWARD_LAST_SCALE", 1.0) * ((initial_cost - best_cost) / initial_cost)
+            config.get("REWARD_LAST_SCALE", 1.0)
+            * ((initial_cost - best_cost) / initial_cost)
         ).view(-1, 1)
 
     return final_reward
@@ -186,7 +191,8 @@ def sa_test(
     epoch: int = 0,
     device: str = "",
     desc_tqdm: str = "Simulated Annealing Progress",
-) -> Dict[str, torch.Tensor]:
+    dtype: torch.dtype = torch.float32,
+) -> Dict[str, torch.Tensor | None | float | float]:
 
     if device == "":
         device = str(initial_solution.device)
@@ -208,20 +214,20 @@ def sa_test(
     current_solution = initial_solution.clone()
     best_solution = initial_solution.clone()
 
-    current_cost = problem.cost(initial_solution)
+    current_cost = problem.cost(initial_solution).to(dtype)
     best_cost = current_cost.clone()
     initial_cost = current_cost.clone()
 
     # Needed only for specific reward calculations
     cumulative_cost = (
-        torch.ones_like(best_cost)
+        torch.ones_like(best_cost).to(dtype)
         if (replay_buffer is not None and config["REWARD"] == "primal")
         else None
     )
 
     # Temperature Setup
     current_temp = torch.tensor([1.0], device=device).repeat(current_cost.shape[0])
-    current_temp = scale_between(current_temp, config["STOP_TEMP"], config["INIT_TEMP"])
+    current_temp = scale_between(current_temp, config["STOP_TEMP"], config["INIT_TEMP"]).to(dtype)
 
     # Initial State
     normalized_temp = scale_to_unit(
@@ -236,7 +242,7 @@ def sa_test(
                 normalized_temp,
                 torch.tensor(1.0, device=device),
             )
-        ).to(device)
+        ).to(device).to(dtype)
 
     # Loop
     progress_bar = tqdm(
@@ -261,7 +267,7 @@ def sa_test(
         # 2. Update & Evaluate
         sol_components, *_ = problem.from_state(current_state)
         proposed_sol, is_valid = problem.update(sol_components, action)
-        proposed_cost = problem.cost(proposed_sol)
+        proposed_cost = problem.cost(proposed_sol).to(dtype)
 
         cost_improvement = current_cost - proposed_cost
 
@@ -309,7 +315,7 @@ def sa_test(
             cumulative_cost += best_cost / initial_cost
 
         # 6. Next Temperature & State
-        next_temp = scheduler.step(step).to(device).repeat(current_solution.shape[0])
+        next_temp = scheduler.step(step).to(device).repeat(current_solution.shape[0]).to(dtype)
         current_temp = next_temp
 
         adv = torch.tensor(1 - (step / total_steps), device=device)
@@ -319,7 +325,7 @@ def sa_test(
         else:
             next_state = problem.to_state(
                 *problem.build_state_components(current_solution, model_temp, adv)
-            ).to(device)
+            ).to(device).to(dtype)
 
         # 7. RL Reward (Only calculate if we are training/buffering)
         if replay_buffer is not None:

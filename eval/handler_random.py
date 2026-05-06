@@ -9,13 +9,16 @@ from tqdm import tqdm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from init import initialize_test_problem
 from eval_io import find_models, get_HP_for_model, init_problem_parameters, save_results
-from solver import build_actor, run_lgsa, set_seed, warmup_cuda
+from solver import augment_coords, build_actor, run_lgsa, set_seed, warmup_cuda
+
+from init import initialize_test_problem
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--dim", type=int, default=100, choices=[10, 20, 50, 100, 500, 1000])
+    parser.add_argument(
+        "--dim", type=int, default=100, choices=[10, 20, 50, 100, 500, 1000]
+    )
     parser.add_argument(
         "--DATA", type=str, default="nazari", choices=["nazari", "uchoa"]
     )
@@ -26,6 +29,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--greedy", dest="GREEDY", action="store_true", default=False)
     parser.add_argument(
         "--no-metro", dest="METROPOLIS", action="store_false", default=True
+    )
+    parser.add_argument(
+        "--augment", type=int, default=1, choices=range(1, 9), metavar="K",
+        help="Number of dihedral augmentations to run (1=off, max 8)",
     )
 
 
@@ -106,12 +113,26 @@ def run(args: argparse.Namespace) -> None:
     warmup_cuda()
 
     columns = [
-        "model", "test_data", "initial_cost", "final_cost", "final_cost_baseline",
-        "execution_time", "execution_time_baseline", "LGSA_steps", "SA_steps",
+        "model",
+        "dtype",
+        "test_data",
+        "initial_cost",
+        "final_cost",
+        "final_cost_baseline",
+        "execution_time",
+        "execution_time_baseline",
+        "LGSA_steps",
+        "SA_steps",
     ] + sorted(diff_keys)
 
     rows = []
     all_model_rows = []
+
+    # Save original problem data once — restored before each model and each augmentation run.
+    orig_coords = problem.coords.clone()
+    demands     = problem.demands.clone()
+    capacity    = problem.capacity.clone()
+    B           = orig_coords.shape[0]
 
     for model_name in tqdm(model_names, desc="Models", leave=False):
         HP = init_problem_parameters(model_name, cfg)
@@ -121,43 +142,67 @@ def run(args: argparse.Namespace) -> None:
         problem.set_feature_flags(HP["features"])
         input_dim = problem.get_input_dim()
 
-        actor = build_actor(HP, model_name, input_dim, device=args.device, seed=args.seed)
-
-        # LGSA run
-        t0 = time.time()
-        test = run_lgsa(
-            actor, problem, init_x, HP,
-            outer_steps=args.OUTER_STEPS,
-            baseline=False,
-            greedy=args.GREEDY,
+        actor = build_actor(
+            HP, model_name, input_dim, device=args.device, seed=args.seed,
+            dtype=args.torch_dtype,
         )
-        exec_time = time.time() - t0
-        final_cost = torch.mean(
-            problem.cost(test["best_x"].to(problem.device))
-        ).item()
 
-        # Baseline run (pure SA)
+        # Restore original coords (previous model's augmentation loop leaves problem
+        # in the last augmented frame).
+        problem.generate_params(orig_coords, demands, capacity)
+
+        # --- Baseline run (pure SA, on original coords, before augmentation loop) ---
         if args.BASELINE:
             t0 = time.time()
             test_bl = run_lgsa(
                 actor, problem, init_x, HP,
-                outer_steps=args.OUTER_STEPS,
-                baseline=True,
-                greedy=False,
+                outer_steps=args.OUTER_STEPS, baseline=True, greedy=False,
+                dtype=args.torch_dtype,
             )
-            exec_time_bl = time.time() - t0
+            exec_time_bl  = time.time() - t0
             final_cost_bl = torch.mean(
                 problem.cost(test_bl["best_x"].to(problem.device))
             ).item()
+            # Restore after baseline so the augmentation loop starts from original coords.
+            problem.generate_params(orig_coords, demands, capacity)
         else:
             final_cost_bl = float("nan")
-            exec_time_bl = float("nan")
+            exec_time_bl  = float("nan")
+
+        # --- LGSA augmentation loop ---
+        best_cost     = torch.full((B,), float("inf"), device=args.device)
+        best_solution = None
+
+        t0 = time.time()
+        for k in range(args.augment):
+            aug_coords = augment_coords(orig_coords, k)
+            problem.generate_params(aug_coords, demands, capacity)
+            init_x_k = problem.generate_init_state(args.INIT, False)
+
+            result_k = run_lgsa(
+                actor, problem, init_x_k, HP,
+                outer_steps=args.OUTER_STEPS, baseline=False, greedy=args.GREEDY,
+                dtype=args.torch_dtype,
+            )
+
+            # Cost is frame-invariant (isometry) — directly comparable across k.
+            cost_k   = problem.cost(result_k["best_x"].to(args.device))
+            improved = cost_k < best_cost
+            best_cost = torch.where(improved, cost_k, best_cost)
+            if best_solution is None:
+                best_solution = result_k["best_x"].clone()
+            else:
+                best_solution[improved] = result_k["best_x"][improved]
+
+        exec_time  = time.time() - t0
+        final_cost = torch.mean(best_cost).item()
 
         if args.device == "cuda":
             torch.cuda.empty_cache()
 
         row = {
             "model": os.path.basename(model_name),
+            "dtype": args.dtype,
             "test_data": args.DATA,
             "initial_cost": init_cost,
             "final_cost": final_cost,
@@ -169,13 +214,19 @@ def run(args: argparse.Namespace) -> None:
             **_hp_row(model_name, diff_keys),
         }
         rows.append(row)
-        all_model_rows.append({
-            "model": f"{args.FOLDER}/{os.path.basename(model_name)}",
-            "final_cost": final_cost,
-        })
+        all_model_rows.append(
+            {
+                "model": f"{args.FOLDER}/{os.path.basename(model_name)}",
+                "final_cost": final_cost,
+            }
+        )
 
-    df = pd.DataFrame(rows, columns=columns).drop_duplicates(subset=["model"], keep="first")
-    df_all = pd.DataFrame(all_model_rows).drop_duplicates(subset=["model"], keep="first")
+    df = pd.DataFrame(rows, columns=columns).drop_duplicates(
+        subset=["model"], keep="first"
+    )
+    df_all = pd.DataFrame(all_model_rows).drop_duplicates(
+        subset=["model"], keep="first"
+    )
 
     base_path = f"res/{args.FOLDER}"
     out = save_results(df, base_path, f"res_model_{args.dim}")

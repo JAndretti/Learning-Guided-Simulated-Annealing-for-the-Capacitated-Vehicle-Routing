@@ -98,7 +98,7 @@ def extend_to(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
 def repeat_to(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
     """Repeat tensor1 to match the shape of tensor2."""
     tensor1 = extend_to(tensor1, tensor2)
-    ones = torch.ones(tensor2.shape[:-1] + (1,), device=tensor1.device)
+    ones = torch.ones(tensor2.shape[:-1] + (1,), device=tensor1.device, dtype=tensor1.dtype)
     return tensor1 * ones
 
 

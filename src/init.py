@@ -90,6 +90,7 @@ def inf_test_model(
     config: Dict,
     baseline: bool = False,
     greedy: bool = False,
+    dtype: torch.dtype = torch.float32,
 ) -> Dict[str, torch.Tensor]:
     """
     Test the trained model performance using Simulated Annealing with fast inference (less metrics etc..).
@@ -101,6 +102,7 @@ def inf_test_model(
         config: Configuration dictionary
         baseline: Whether to use baseline mode in testing
         greedy: Whether to use greedy mode in testing
+        dtype: Floating-point precision for the full SA loop
 
     Returns:
         Dictionary containing test results and metrics
@@ -120,6 +122,7 @@ def inf_test_model(
         config=config,
         baseline=baseline,
         greedy=greedy,
+        dtype=dtype,
     )
 
     # Clear GPU cache if using CUDA
