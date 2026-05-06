@@ -77,6 +77,7 @@ def run(args: argparse.Namespace) -> None:
         return
     print(f"Found {len(instance_files)} instances.")
 
+    # Full solve on middle instance warms up both CUDA and JIT compilation
     print("Warming up...")
     mid_data = load_vrp_instance(instance_files[len(instance_files) // 2], load_solution=False)
     _solve(mid_data, actor, HP, args)

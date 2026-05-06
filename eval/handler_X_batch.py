@@ -99,6 +99,9 @@ def _solve_bucket(
             if n_ghost > 0:
                 padding = torch.zeros(n_ghost, dtype=sol.dtype, device=sol.device)
                 init_x[i, :, 0] = torch.cat([real_part, padding])
+        # Explicit init here so the compacted init_x (ghost nodes pushed to the end)
+        # is the state SA starts from. inf_test_model calls init_parameters again
+        # internally, but it receives the same tensor so the result is identical.
         problem.init_parameters(init_x)
 
         t0 = time.time()

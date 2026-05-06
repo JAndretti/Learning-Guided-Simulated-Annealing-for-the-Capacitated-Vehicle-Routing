@@ -21,9 +21,6 @@ pre_parser.add_argument("--dataset", choices=HANDLERS.keys(), default=None)
 pre_args, _ = pre_parser.parse_known_args()
 
 handler = importlib.import_module(HANDLERS[pre_args.dataset]) if pre_args.dataset else None
-if handler is not None:
-    # Register dataset-specific args before the full parse so they appear in --help
-    pass  # add_args called after parser construction below
 
 # --- Pass 2: full parse with common + handler-specific args ---
 parser = argparse.ArgumentParser(
@@ -54,8 +51,5 @@ parser.add_argument(
 if handler is not None:
     handler.add_args(parser)
 args = parser.parse_args()
-
-if handler is None:
-    parser.error("argument --dataset is required")
 
 handler.run(args)

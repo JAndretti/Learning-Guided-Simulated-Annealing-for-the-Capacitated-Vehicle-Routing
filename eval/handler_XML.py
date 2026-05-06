@@ -59,6 +59,9 @@ def run(args: argparse.Namespace) -> None:
     instances = [d for d in instances if d["n_nodes"] == first_n]
     if len(instances) < len(instance_files):
         print(f"Filtered to {len(instances)} instances with N={first_n}")
+    if not instances:
+        print("No instances remain after size filtering. Aborting.")
+        return
 
     B = len(instances)
     N = first_n

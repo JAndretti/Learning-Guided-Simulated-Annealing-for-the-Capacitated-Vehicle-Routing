@@ -8,20 +8,29 @@ import vrplib
 import yaml
 
 
+def _checkpoint_loss(path: str) -> float:
+    """Extract the loss value embedded in a checkpoint filename (e.g. actor_0.1234.pt)."""
+    name = os.path.basename(path)
+    try:
+        return float(name.split("_")[-1])
+    except ValueError:
+        return float("inf")
+
+
 def find_model(folder: str) -> str:
-    """Return the last model path in wandb/LGSA/<folder>/models/."""
+    """Return the best (lowest-loss) model path in wandb/LGSA/<folder>/models/."""
     paths = glob2.glob(os.path.join("wandb", "LGSA", folder, "models", "*"))
     if not paths:
         raise FileNotFoundError(f"No models found in wandb/LGSA/{folder}/models/")
-    return paths[-1]
+    return min(paths, key=_checkpoint_loss)
 
 
 def find_models(folder: str) -> list[str]:
-    """Return all model paths in wandb/LGSA/<folder>/models/."""
+    """Return all model paths in wandb/LGSA/<folder>/models/, sorted by loss ascending."""
     paths = glob2.glob(os.path.join("wandb", "LGSA", folder, "models", "*"))
     if not paths:
         raise FileNotFoundError(f"No models found in wandb/LGSA/{folder}/models/")
-    return paths
+    return sorted(paths, key=_checkpoint_loss)
 
 
 def get_HP_for_model(model_path: str) -> dict:

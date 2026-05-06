@@ -108,7 +108,7 @@ def run(args: argparse.Namespace) -> None:
     columns = [
         "model", "test_data", "initial_cost", "final_cost", "final_cost_baseline",
         "execution_time", "execution_time_baseline", "LGSA_steps", "SA_steps",
-    ] + list(diff_keys)
+    ] + sorted(diff_keys)
 
     rows = []
     all_model_rows = []
