@@ -27,9 +27,8 @@ export PYTHONUNBUFFERED=1
 # Force tqdm to only print an update every 30 seconds
 export TQDM_MININTERVAL=30
 
-export UV_SYSTEM_PYTHON=1
-export UV_PYTHON=$(which python)
-
+export UV_CACHE_DIR=$WORK/.uv_cache
+export UV_LINK_MODE=copy
 
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
