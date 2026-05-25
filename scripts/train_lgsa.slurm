@@ -34,4 +34,5 @@ export UV_PYTHON=$(which python)
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
 rm -rf wandb/LG-SA/wandb
-srun uv run --no-sync --python $(which python) launch_HP_sweep.py
+source .venv/bin/activate
+srun python launch_HP_sweep.py
