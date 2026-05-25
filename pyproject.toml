@@ -1,35 +1,38 @@
 [project]
-name = "LGSA"
-version = "0.1.0"
 description = "A Python package for solving the Capacitated Vehicle Routing Problem (CVRP) using Proximal Policy Optimization (PPO)."
+name = "LGSA"
 readme = "README.md"
 requires-python = ">=3.12"
+version = "0.1.0"
+
+# 1. Base dependencies ONLY (No PyTorch stack)
 dependencies = [
-    "glob2>=0.7",
-    "ipykernel>=6.29.5",
-    "loguru>=0.7.3",
-    "matplotlib>=3.10.1",
-    "numpy>=2.2.4",
-    "ortools>=9.12.4544",
-    "pandas>=2.2.3",
-    "pyyaml>=6.0.2",
-    "rich>=14.0.0",
-    "tqdm>=4.67.1",
-    "vrplib>=1.5.1",
-    "wandb>=0.19.9",
-    "py7zr>=1.0.0",
-    "torch>=2.11.0",
-    "torchvision>=0.26.0",
-    "torchaudio>=2.11.0",
-    "tensordict>=0.6",
+  "glob2>=0.7",
+  "ipykernel>=6.29.5",
+  "loguru>=0.7.3",
+  "matplotlib>=3.10.1",
+  "numpy>=2.2.4",
+  "ortools>=9.12.4544",
+  "pandas>=2.2.3",
+  "pyyaml>=6.0.2",
+  "rich>=14.0.0",
+  "tqdm>=4.67.1",
+  "vrplib>=1.5.1",
+  "wandb>=0.19.9",
+  "py7zr>=1.0.0",
 ]
 
-[constraint-dependencies]
-torch = "==2.9.1"
-torchvision = "==0.24.1"
-torchaudio = "==2.9.1"
+# 2. Dependency Group for local machine installs
+[dependency-groups]
+local-gpu = [
+  "torch==2.9.1",
+  "torchvision==0.24.1",
+  "torchaudio==2.9.1",
+  "tensordict>=0.6",
+]
 
-[[index]]
+# 3. Proper `uv` nesting for the PyTorch index
+[[tool.uv.index]]
+explicit = true
 name = "pytorch"
 url = "https://download.pytorch.org/whl/cu130"
-explicit = true
