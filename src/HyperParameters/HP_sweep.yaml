@@ -1,18 +1,23 @@
 # src/HyperParameters/HP_sweep.yaml
 
 
-# INIT Jz
+# CL sweep — sigmoid schedule (STEEP_SIG varies)
+- GROUP: ["CL_sig"]
+  CL: [True]
+  CL_TYPE: ["sig"]
+  MAX_PROB_STEP: [500, 1000, 2000]
+  MAX_OUTER_STEPS_CL: [250, 500, 1000]
+  STEEP_SIG: [0.005, 0.01, 0.05]
+  PPO_EPOCHS: [5]
 
-
-- GROUP: ["test_attention2"]
-  MODEL: ["attention"]
-  CRITIC_MODEL: ["ff"]
-  EMBEDDING_DIM: [64]
-  NUM_H_LAYERS: [1]
-  ATTN_DIM: [64]
-  ATTN_NUM_HEADS: [4]
-  ATTN_NUM_LAYERS: [2]
-  CL: [False]
+# CL sweep — linear schedule (STEEP_SIG passed but ignored by lin scheduler)
+- GROUP: ["CL_lin"]
+  CL: [True]
+  CL_TYPE: ["lin"]
+  MAX_PROB_STEP: [500, 1000, 2000]
+  MAX_OUTER_STEPS_CL: [250, 500, 1000]
+  STEEP_SIG: [0.01]
+  PPO_EPOCHS: [5]
 
 
 

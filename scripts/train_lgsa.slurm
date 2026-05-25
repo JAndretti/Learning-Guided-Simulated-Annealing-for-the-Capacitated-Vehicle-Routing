@@ -1,19 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=LGSA_train
-#SBATCH -A aik@a100           # aik@a100 / aik@v100 
-#SBATCH -C a100            # a100 / v100
+#SBATCH -A aik@v100           # aik@a100 / aik@v100 
+#SBATCH -C v100            # a100 / v100
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1          # Nombre de GPU
-#SBATCH --gres=gpu:1                 # Doit correspondre à ntasks-per-node
-#SBATCH --cpus-per-task=8           # 8 CPUs par GPU sur A100 / 10 sur V100
+#SBATCH --ntasks-per-node=1          # single task — multiprocessing handles the 4 GPUs
+#SBATCH --gres=gpu:4                 # 4 GPUs per node
+#SBATCH --cpus-per-task=40           # 10 CPUs per GPU × 4 on V100
 #SBATCH --hint=nomultithread
-#SBATCH --time=15:00:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
+#SBATCH --time=50:00:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
 #SBATCH --output=logs/lgsa_%j.out
 #SBATCH --error=logs/lgsa_%j.out
 
 # 1. Clean environment and load modules
 module purge
-module load arch/a100                # OBLIGATOIRE pour a100 sinon commenter la ligne
+# module load arch/a100                # MUST have for a100 else comment
 module load pytorch-gpu/py3/2.8.0  # MUST match the version you used to install
 
 set -x  # affiche les commandes dans les logs
@@ -29,5 +29,5 @@ export TQDM_MININTERVAL=30
 
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
-rm -rf wandb/LG-SA/wandb
-srun bash scripts/script.sh
+# rm -rf wandb/LG-SA/wandb
+srun uv run launch_HP_sweep.py
