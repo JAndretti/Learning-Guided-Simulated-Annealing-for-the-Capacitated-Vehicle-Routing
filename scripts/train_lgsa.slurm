@@ -29,5 +29,5 @@ export TQDM_MININTERVAL=30
 
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
-# rm -rf wandb/LG-SA/wandb
+rm -rf wandb/LG-SA/wandb
 srun uv run launch_HP_sweep.py
