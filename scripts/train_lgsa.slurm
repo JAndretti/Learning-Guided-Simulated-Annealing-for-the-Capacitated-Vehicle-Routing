@@ -27,7 +27,11 @@ export PYTHONUNBUFFERED=1
 # Force tqdm to only print an update every 30 seconds
 export TQDM_MININTERVAL=30
 
+export UV_SYSTEM_PYTHON=1
+export UV_PYTHON=$(which python)
+
+
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
 rm -rf wandb/LG-SA/wandb
-srun uv run launch_HP_sweep.py
+srun uv run --no-sync --python $(which python) launch_HP_sweep.py
