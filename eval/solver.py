@@ -115,7 +115,7 @@ def run_lgsa(
     Returns the result dict from inf_test_model unchanged.
     """
     hp = {**HP, "TEST_OUTER_STEPS": outer_steps}
-    return inf_test_model(
+    results_td, _ = inf_test_model(
         actor=actor,
         problem=problem,
         initial_solutions=init_x,
@@ -124,6 +124,7 @@ def run_lgsa(
         greedy=greedy,
         dtype=dtype,
     )
+    return results_td
 
 
 # 8 isometries of the unit square (dihedral group D4).

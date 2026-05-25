@@ -1,6 +1,7 @@
 from typing import Dict, Tuple
 
 import torch
+from tensordict import TensorDict
 from tqdm import tqdm
 
 from model import SAModel
@@ -350,10 +351,8 @@ def sa_test(
                 current_state,
                 mask,
                 action,
-                next_state,
                 reward_signal,
                 action_log_prob,
-                config["GAMMA"],
             )
 
         # Move to next state
@@ -361,34 +360,39 @@ def sa_test(
 
     # --- FINAL CLEANUP ---
 
-    # Handle last transition in replay buffer if training
+    # Mark last transition as terminal (gamma=0)
     if replay_buffer is not None and len(replay_buffer) > 0:
-        replay_buffer.push(*(list(replay_buffer.pop()[:-1]) + [0.0]))
+        replay_buffer.mark_terminal()
 
-    # --- DUMMY RETURN ---
-    # Only best_x and min_cost are real. Others are None or Dummy.
-    results = {
-        "best_x": best_solution,
-        "min_cost": best_cost,
-        # Dummies/Placeholders to prevent key errors in existing code
+    n_problems = best_solution.shape[0]
+
+    results_td = TensorDict(
+        {
+            "best_x": best_solution,
+            "min_cost": best_cost,
+            "init_cost": initial_cost,
+        },
+        batch_size=[n_problems],
+    )
+
+    results_extra = {
         "primal": torch.tensor(0.0),
         "ngain": torch.tensor(0.0),
         "n_acc": torch.tensor(0.0),
         "n_rej": torch.tensor(0.0),
+        "best_step": torch.tensor(0.0),
+        "average_sum_rewards": torch.tensor(0.0),
         "distributions": None,
         "is_valid": None,
         "states": None,
         "actions": None,
         "acceptance": None,
         "costs": None,
-        "init_cost": initial_cost,
         "reward": None,
-        "average_sum_rewards": torch.tensor(0.0),
-        "temperature": None,
-        "best_step": torch.tensor(0.0),
         "capacity_left": None,
+        "temperature": None,
         "ratio": 0.0,
         "heuristic": None,
     }
 
-    return results
+    return results_td, results_extra

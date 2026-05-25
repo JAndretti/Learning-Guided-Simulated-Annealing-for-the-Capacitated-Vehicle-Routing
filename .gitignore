@@ -94,3 +94,7 @@ scripts/
 latex/
 
 uv.toml
+
+src/TSP/
+
+benchmark/

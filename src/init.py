@@ -65,7 +65,7 @@ def test_model(
     problem.init_parameters(initial_solutions)
 
     # Perform Simulated Annealing for testing
-    test_results = sa_train(
+    results_td, results_extra = sa_train(
         actor=actor,
         problem=problem,
         initial_solution=initial_solutions,
@@ -80,7 +80,7 @@ def test_model(
     if problem.device == "cuda":
         torch.cuda.empty_cache()
 
-    return test_results
+    return results_td, results_extra
 
 
 def inf_test_model(
@@ -115,7 +115,7 @@ def inf_test_model(
     problem.init_parameters(initial_solutions)
 
     # Perform Simulated Annealing for testing
-    test_results = sa_test(
+    results_td, results_extra = sa_test(
         actor=actor,
         problem=problem,
         initial_solution=initial_solutions,
@@ -129,7 +129,7 @@ def inf_test_model(
     if problem.device == "cuda":
         torch.cuda.empty_cache()
 
-    return test_results
+    return results_td, results_extra
 
 
 def initialize_test_problem(

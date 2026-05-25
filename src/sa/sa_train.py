@@ -5,6 +5,7 @@
 from typing import Dict, Tuple
 
 import torch
+from tensordict import TensorDict
 from tqdm import tqdm
 
 from model import SAModel
@@ -49,21 +50,26 @@ def normalize(
 def initialize_optimization_state(
     problem: CVRP, initial_solution: torch.Tensor, device: str
 ):
-    """Initializes dictionaries for solution, costs, and tracking metrics."""
+    """Initializes a TensorDict for solution, costs, and tracking metrics."""
     best_cost = problem.cost(initial_solution)
+    n = initial_solution.shape[0]
 
-    return {
-        "best_solution": initial_solution,
-        "current_solution": initial_solution,
-        "best_cost": best_cost,
-        "current_cost": best_cost.clone(),
-        "initial_cost": best_cost.clone(),
-        "cumulative_cost": torch.ones_like(best_cost),  # best_cost / initial_cost = 1
-        "best_cost_step": torch.zeros_like(best_cost, dtype=torch.long),
-        "capacity_left": capacity_utilization(
-            initial_solution, problem.get_demands(initial_solution), problem.capacity
-        ),
-    }
+    return TensorDict(
+        {
+            "best_solution": initial_solution,
+            "current_solution": initial_solution,
+            "best_cost": best_cost,
+            "current_cost": best_cost.clone(),
+            "initial_cost": best_cost.clone(),
+            "cumulative_cost": torch.ones_like(best_cost),
+            "best_cost_step": torch.zeros_like(best_cost, dtype=torch.long),
+            "capacity_left": capacity_utilization(
+                initial_solution, problem.get_demands(initial_solution), problem.capacity
+            ),
+        },
+        batch_size=[n],
+        device=device,
+    )
 
 
 def initialize_tracking_variables():
@@ -505,10 +511,8 @@ def sa_train(
                 current_state,
                 mask,
                 action,
-                next_state,
                 tracking["reward_signal"],
                 action_log_prob,
-                config["GAMMA"],
             )
 
         # Move to next state
@@ -516,41 +520,46 @@ def sa_train(
 
     # --- FINALIZE RESULTS ---
 
-    # Handle last transition in replay buffer
+    # Mark last transition as terminal (gamma=0)
     if replay_buffer is not None and len(replay_buffer) > 0:
-        replay_buffer.push(*(list(replay_buffer.pop()[:-1]) + [0.0]))
+        replay_buffer.mark_terminal()
 
-    results = {
-        "best_x": opt_state["best_solution"],
-        "min_cost": opt_state["best_cost"],
-        "primal": opt_state["cumulative_cost"],
-        "ngain": -(opt_state["initial_cost"] - opt_state["current_cost"]),
-        "n_acc": tracking["accepted_moves"].float(),
-        "n_rej": tracking["rejected_moves"].float(),
-        "distributions": tracking["action_distributions"],
+    n_problems = opt_state["best_solution"].shape[0]
+
+    results_td = TensorDict(
+        {
+            "best_x": opt_state["best_solution"],
+            "min_cost": opt_state["best_cost"],
+            "primal": opt_state["cumulative_cost"],
+            "ngain": -(opt_state["initial_cost"] - opt_state["current_cost"]),
+            "n_acc": tracking["accepted_moves"].float(),
+            "n_rej": tracking["rejected_moves"].float(),
+            "reward": tracking["reward_signal"],
+            "best_step": opt_state["best_cost_step"].float(),
+            "capacity_left": capacity_utilization(
+                opt_state["best_solution"],
+                problem.get_demands(opt_state["best_solution"]),
+                problem.capacity,
+            ),
+            "init_cost": opt_state["initial_cost"],
+        },
+        batch_size=[n_problems],
+    )
+
+    results_extra = {
+        "average_sum_rewards": torch.stack(tracking["all_rewards"]).cpu().sum(dim=0).mean(),
         "is_valid": torch.tensor(tracking["is_valid_history"]),
+        "distributions": tracking["action_distributions"],
         "states": tracking["state_history"],
         "solutions": tracking["solution_history"],
         "actions": tracking["action_history"],
         "acceptance": tracking["acceptance_history"],
         "costs": tracking["cost_history"],
-        "init_cost": opt_state["initial_cost"],
-        "reward": tracking["reward_signal"],
-        "average_sum_rewards": torch.stack(tracking["all_rewards"])
-        .cpu()
-        .sum(dim=0)
-        .mean(),
         "temperature": tracking["temperature"],
-        "best_step": opt_state["best_cost_step"].float(),
-        "capacity_left": capacity_utilization(
-            opt_state["best_solution"],
-            problem.get_demands(opt_state["best_solution"]),
-            problem.capacity,
-        ),
     }
 
     if len(config["HEURISTIC"]) > 1:
-        results["ratio"] = tracking["ratio"] / total_steps
-        results["heuristic"] = tracking["heuristic_choice"]
+        results_extra["ratio"] = tracking["ratio"] / total_steps
+        results_extra["heuristic"] = tracking["heuristic_choice"]
 
-    return results
+    return results_td, results_extra

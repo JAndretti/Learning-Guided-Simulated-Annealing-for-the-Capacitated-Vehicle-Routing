@@ -16,6 +16,7 @@ Key Components:
 
 # Standard Library
 import math
+import time
 import warnings
 from typing import Any, Dict, Optional, Tuple
 
@@ -75,7 +76,8 @@ def log_training_and_test_metrics(
     pre_step: int,
     early_stopping_counter: int,
     a_min_cost: float,
-    test_results: Optional[Dict[str, torch.Tensor]],
+    test_results_td: Optional[Any],
+    test_results_extra: Optional[Dict],
     epoch: int,
     config: Dict[str, Any],
     log_test: bool = False,
@@ -105,21 +107,21 @@ def log_training_and_test_metrics(
         )
 
     # 2. Test Metrics (Periodic)
-    if log_test and test_results is not None:
+    if log_test and test_results_td is not None and test_results_extra is not None:
         logs.update(
             {
-                "Min_cost": torch.mean(test_results["min_cost"]),
+                "Min_cost": torch.mean(test_results_td["min_cost"]),
                 "A_min_cost": a_min_cost,
                 "Gain": torch.mean(
-                    test_results["init_cost"] - test_results["min_cost"]
+                    test_results_td["init_cost"] - test_results_td["min_cost"]
                 ),
-                "Test_Rewards_mean": test_results["average_sum_rewards"].item(),
-                "Acceptance_rate": torch.mean(test_results["n_acc"])
+                "Test_Rewards_mean": test_results_extra["average_sum_rewards"].item(),
+                "Acceptance_rate": torch.mean(test_results_td["n_acc"])
                 / config["TEST_OUTER_STEPS"],
-                "Step_best_cost": torch.mean(test_results["best_step"])
+                "Step_best_cost": torch.mean(test_results_td["best_step"])
                 / config["TEST_OUTER_STEPS"],
-                "Valid_percentage": torch.mean(test_results["is_valid"]),
-                "Final_capacity_left": torch.mean(test_results["capacity_left"]),
+                "Valid_percentage": torch.mean(test_results_extra["is_valid"]),
+                "Final_capacity_left": torch.mean(test_results_td["capacity_left"]),
             }
         )
 
@@ -264,7 +266,7 @@ def train_ppo(
         init_list=current_init_list,  # Pass the dynamic list here
     )
     buffer_size = config["OUTER_STEPS"]
-    replay_buffer = ReplayBuffer(buffer_size)
+    replay_buffer = ReplayBuffer(buffer_size, device=torch.device(problem.device))
     pre_step = 0
 
     # 2. Curriculum Learning (Improvement Phase)
@@ -282,7 +284,7 @@ def train_ppo(
             pre_step = t_init
 
             # Run deterministic improvement
-            pre_res = sa_train(
+            pre_res_td, _ = sa_train(
                 actor=actor,
                 problem=problem,
                 initial_solution=initial_solutions,
@@ -295,12 +297,12 @@ def train_ppo(
 
             # Use improved solutions as start point for training
             config["TEST_OUTER_STEPS"] = original_steps
-            initial_solutions = pre_res["best_x"].detach()
+            initial_solutions = pre_res_td["best_x"].detach()
             problem.init_parameters(initial_solutions)
-            del pre_res
+            del pre_res_td
 
     # 3. Experience Collection (Simulated Annealing)
-    sa_results = sa_train(
+    sa_results_td, sa_results_extra = sa_train(
         actor=actor,
         problem=problem,
         initial_solution=initial_solutions,
@@ -339,7 +341,31 @@ def train_ppo(
     if problem.device == "cuda":
         torch.cuda.empty_cache()
 
-    return sa_results, train_stats, avg_actor_grad, avg_critic_grad, pre_step
+    return sa_results_td, sa_results_extra, train_stats, avg_actor_grad, avg_critic_grad, pre_step
+
+
+# ============================================================================
+# BENCHMARK HELPERS
+# ============================================================================
+
+
+def _log_benchmark_epoch(
+    path: str,
+    epoch: int,
+    elapsed: float,
+    actor_loss: float,
+    critic_loss: float,
+    test_loss: float,
+) -> None:
+    import csv
+    import os
+    write_header = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        w = csv.writer(f)
+        if write_header:
+            w.writerow(["epoch", "time_s", "actor_loss", "critic_loss", "test_loss"])
+        w.writerow([epoch, f"{elapsed:.3f}", f"{actor_loss:.6f}",
+                    f"{critic_loss:.6f}", f"{test_loss:.6f}"])
 
 
 # ============================================================================
@@ -404,10 +430,10 @@ def main(config: dict) -> None:
     critic_scheduler = ExponentialLR(critic_optimizer, gamma=0.985)
 
     # --- 4. Baseline & Pre-checks ---
-    initial_test_results = test_model(
+    initial_test_results_td, initial_test_results_extra = test_model(
         actor, test_problem, initial_test_solutions, config
     )
-    current_test_loss = torch.mean(initial_test_results["min_cost"])
+    current_test_loss = torch.mean(initial_test_results_td["min_cost"])
     logger.info(f"Baseline Test Loss: {current_test_loss:.4f}")
 
     # --- 5. Training Loop ---
@@ -425,13 +451,14 @@ def main(config: dict) -> None:
     save_period = 5
 
     for epoch in progress_bar:
+        _epoch_start = time.time()
         # A. Prepare Data
         training_problem = initialize_training_problem(
             training_problem, device, config, epoch
         )
 
         # B. Run Training Step
-        sa_results, train_stats, avg_actor_grad, avg_critic_grad, pre_step = train_ppo(
+        sa_td, sa_extra, train_stats, avg_actor_grad, avg_critic_grad, pre_step = train_ppo(
             actor=actor,
             critic=critic,
             actor_optimizer=actor_optimizer,
@@ -448,12 +475,12 @@ def main(config: dict) -> None:
         config["BETA_KL"] = beta_kl
 
         # D. Periodic Evaluation
-        test_results = None
+        test_results_td, test_results_extra = None, None
         if epoch % save_period == 0 and epoch != 0:
-            test_results = test_model(
+            test_results_td, test_results_extra = test_model(
                 actor, test_problem, initial_test_solutions, config
             )
-            current_test_loss = torch.mean(test_results["min_cost"])
+            current_test_loss = torch.mean(test_results_td["min_cost"])
             if current_test_loss.item() < a_min_cost:
                 a_min_cost = current_test_loss.item()
 
@@ -476,15 +503,14 @@ def main(config: dict) -> None:
                 lr_actor=actor_optimizer.param_groups[0]["lr"],
                 beta_kl=beta_kl,
                 explained_var=explained_var,
-                rewards_mean=sa_results["average_sum_rewards"].item(),
+                rewards_mean=sa_extra["average_sum_rewards"].item(),
                 average_kl=average_kl,
                 entropy=avg_entropy,
                 pre_step=pre_step,
                 early_stopping_counter=early_stopping_counter,
                 a_min_cost=a_min_cost,
-                test_results=test_results
-                if (epoch >= save_period)
-                else initial_test_results,
+                test_results_td=test_results_td if (epoch >= save_period) else initial_test_results_td,
+                test_results_extra=test_results_extra if (epoch >= save_period) else initial_test_results_extra,
                 epoch=epoch,
                 config=config,
                 log_test=(epoch % save_period == 0 and epoch != 0),
@@ -518,6 +544,16 @@ def main(config: dict) -> None:
         progress_bar.set_description(
             f"Test Loss: {current_test_loss:.4f} | EarlyStop: {early_stopping_counter}"
         )
+
+        if config.get("BENCHMARK_LOG"):
+            _log_benchmark_epoch(
+                config["BENCHMARK_LOG"],
+                epoch,
+                time.time() - _epoch_start,
+                actor_loss if actor_loss is not None else float("nan"),
+                critic_loss,
+                current_test_loss.item(),
+            )
 
     logger.info("Training Completed Successfully.")
 

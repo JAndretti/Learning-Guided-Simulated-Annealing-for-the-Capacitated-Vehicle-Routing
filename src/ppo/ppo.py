@@ -8,7 +8,7 @@ from tqdm import tqdm
 from model import SAModel
 from utils import setup_device, setup_logging
 
-from .replay import ReplayBuffer, Transition
+from .replay import ReplayBuffer
 
 logger = setup_logging()
 
@@ -82,7 +82,7 @@ def run_ppo_training_epochs(
     total_samples = state.size(0)
 
     # Create a single permutation of indices for all epochs
-    indices = torch.randperm(total_samples)
+    indices = torch.randperm(total_samples, device=state.device)
 
     # Store the "old" values that will not change during epochs
     all_values = []
@@ -309,61 +309,36 @@ def ppo(
 
     # === 1. Extract and process transitions from replay buffer ===
     with torch.no_grad():  # No gradients needed for preparation
-        transitions = replay.memory
-        nt = len(transitions)  # nt is the sequence length
+        nt = len(replay)
+        all_td = replay.get_all_ordered()
 
-        batch = Transition(*zip(*transitions))
+        rewards = all_td["reward"].to(device).squeeze()  # [nt, n_problems]
 
-        rewards = (
-            torch.stack(batch.reward).to(device).squeeze()
-        )  # Should be of size [nt, n_problems]
-
-        # Create the 'dones' mask from 'gamma'. This is more idiomatic.
-        # gamma == 0 means the episode is done.
-        gammas_tensor = torch.tensor(batch.gamma, device=device)
+        # done==True on the terminal step; expand to [nt, n_problems]
         dones = (
-            (gammas_tensor == 0)
+            all_td["done"].to(device)
             .float()
             .unsqueeze(-1)
-            .repeat((1, n_problems))  # .view(nt, n_problems)
-        )  # Size [nt, n_problems]
+            .expand(nt, n_problems)
+            .contiguous()
+        )  # [nt, n_problems]
 
-        # Prepare other tensors. The .view(nt, n_problems, ...) is more direct.
-        # Note: The reshape to (nt * n_problems, ...) is done AFTER GAE computation.
-        state = (
-            torch.stack(batch.state).view(nt, n_problems, problem_dim, -1).to(device)
-        )
-        mask = torch.stack(batch.mask).view(nt, n_problems, -1).to(device)
-        action = torch.stack(batch.action).view(nt, n_problems, -1).to(device)
-        next_state = (
-            torch.stack(batch.next_state)
-            .view(nt, n_problems, problem_dim, -1)
-            .to(device)
-        )
-        old_log_probs = (
-            torch.stack(batch.old_log_probs).view(nt, n_problems, -1).to(device)
-        )
+        state = all_td["state"].reshape(nt, n_problems, problem_dim, -1).to(device)
+        mask = all_td["mask"].reshape(nt, n_problems, -1).to(device)
+        action = all_td["action"].reshape(nt, n_problems, -1).to(device)
+        old_log_probs = all_td["old_log_probs"].reshape(nt, n_problems, -1).to(device)
 
-        # Get V(s) and V(s_next)
-        # We need to flatten the sequence and problem dimension for network input
+        # One critic pass over all states; next_state_values = state_values shifted by 1
+        # (valid because next_state[t] == state[t+1]; terminal row is zeroed by dones)
         flat_state = state.view(nt * n_problems, problem_dim, -1)
-        flat_next_state = next_state.view(nt * n_problems, problem_dim, -1)
 
         batch_size = cfg["BATCH_SIZE"]
 
-        # --- Process state_values ---
-        state_chunks = []
-        for i in range(0, flat_state.size(0), batch_size):
-            chunk = flat_state[i : i + batch_size]
-            state_chunks.append(critic(chunk))
-        state_values = torch.cat(state_chunks, dim=0).view(nt, n_problems)
+        state_values = critic(flat_state).view(nt, n_problems)
 
-        # --- Process next_state_values ---
-        next_state_chunks = []
-        for i in range(0, flat_next_state.size(0), batch_size):
-            chunk = flat_next_state[i : i + batch_size]
-            next_state_chunks.append(critic(chunk))
-        next_state_values = torch.cat(next_state_chunks, dim=0).view(nt, n_problems)
+        # V(s_{t+1}): shift state_values by one step; last row stays 0 (masked by dones)
+        next_state_values = torch.zeros_like(state_values)
+        next_state_values[:-1] = state_values[1:]
 
         # === 2. Vectorized Computation of Advantages (GAE) and Returns ===
         advantages = torch.zeros_like(rewards)

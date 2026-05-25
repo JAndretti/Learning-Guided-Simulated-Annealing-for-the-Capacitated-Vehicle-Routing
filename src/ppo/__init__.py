@@ -1,8 +1,4 @@
 from .ppo import ppo
-from .replay import ReplayBuffer, Transition
+from .replay import ReplayBuffer
 
-__all__ = [
-    "ppo",
-    "ReplayBuffer",
-    "Transition",
-]
+__all__ = ["ppo", "ReplayBuffer"]
