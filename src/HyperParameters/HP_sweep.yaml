@@ -2,6 +2,14 @@
 
 
 # CL sweep — sigmoid schedule (STEEP_SIG varies)
+- GROUP: ["CL_base"]
+  CL: [False]
+  CL_TYPE: ["sig"]
+  MAX_PROB_STEP: [0]
+  MAX_OUTER_STEPS_CL: [0]
+  STEEP_SIG: [0]
+  PPO_EPOCHS: [5]
+
 - GROUP: ["CL_sig"]
   CL: [True]
   CL_TYPE: ["sig"]
