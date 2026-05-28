@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:4                 # 4 GPUs per node
 #SBATCH --cpus-per-task=40           # 10 CPUs per GPU × 4 on V100
 #SBATCH --hint=nomultithread
-#SBATCH --time=20:00:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
+#SBATCH --time=24:30:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
 #SBATCH --output=logs/lgsa_%j.out
 #SBATCH --error=logs/lgsa_%j.out
 
@@ -32,6 +32,6 @@ export UV_LINK_MODE=copy
 
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
-rm -rf wandb/LG-SA/wandb
+# rm -rf wandb/LG-SA/wandb
 source .venv/bin/activate
 srun python launch_HP_sweep.py
