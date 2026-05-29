@@ -30,29 +30,29 @@
 # --- BATCH 0 (ACTIVE): baseline + noise floor -------------------------------
 #   Run the no-CL baseline across seeds. Read: baseline mean +/- std. The std
 #   here IS your empirical significance threshold for every later comparison.
-- GROUP: [P0_baseline]
-  CL: [false]
-  CL_TYPE: [sig]              # ignored when CL=false
-  MAX_OUTER_STEPS_CL: [500]   # ignored
-  MAX_PROB_STEP: [1000]       # ignored
-  STEEP_SIG: [0.01]           # ignored
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2, 3, 4]
+# - GROUP: [P0_baseline]
+#   CL: [false]
+#   CL_TYPE: [sig]              # ignored when CL=false
+#   MAX_OUTER_STEPS_CL: [500]   # ignored
+#   MAX_PROB_STEP: [1000]       # ignored
+#   STEEP_SIG: [0.01]           # ignored
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2, 3, 4]
 
 
 # --- BATCH 1: does curriculum help at all? (go / no-go gate) -----------------
 #   CL on (neutral mid-range config) vs off, paired by seed. If CL does not beat
 #   Batch 0 by more than the noise floor, stop here and report a null result.
-# - GROUP: [P1_CL]
-#   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [500]
-#   MAX_PROB_STEP: [1000]
-#   STEEP_SIG: [0.01]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2, 3, 4]
+- GROUP: [P1_CL]
+  CL: [true]
+  CL_TYPE: [sig]
+  MAX_OUTER_STEPS_CL: [500]
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.01]
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [0, 1, 2, 3, 4]
 
 
 # --- BATCH 2: schedule shape — sigmoid vs linear ----------------------------
