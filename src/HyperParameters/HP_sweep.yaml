@@ -1,352 +1,160 @@
 # src/HyperParameters/HP_sweep.yaml
+# ============================================================================
+# CURRICULUM-LEARNING EVALUATION PROTOCOL (from scratch)
+# ============================================================================
+# Goal: evaluate the curriculum parameters for the paper, assuming NOTHING has
+# been measured yet. Full factorial over {CL_TYPE, MAX_OUTER_STEPS_CL,
+# MAX_PROB_STEP, STEEP_SIG} x seeds is too expensive, so this is a SEQUENTIAL
+# (coordinate-descent) protocol: each batch fixes the winner of the previous
+# one. This is greedy and assumes the parameters are roughly separable; the
+# sensitivity batches (3-5) and the final confirmation batch (7) guard against
+# that assumption being wrong.
+#
+# HOW TO RUN
+#   * Exactly ONE batch is uncommented at a time (Batch 0 below is active).
+#   * LAUNCHER RULE: every uncommented group must list the EXACT same keys.
+#   * After a batch finishes, evaluate its checkpoints (eval/run.py) and pick
+#     the lowest MEAN final_cost across seeds; write that value into the
+#     "<-- FIX from Batch N" placeholders of the next batch, then uncomment it.
+#
+# CONVENTIONS (held constant unless a batch is sweeping them)
+#   PPO_EPOCHS: 5            (matches the production setting)
+#   TEST_OUTER_STEPS: 5000   (pinned -> avoids the model-selection confound)
+#   N_EPOCHS: HP.yaml default (1000)
+#   Significance: trust a difference only if mean gap > ~1e-2 routing units
+#     (the run-to-run noise floor measured in Batch 0).
+#   Seeds: exploratory batches use 3 seeds; gate/confirmation use 5.
+# ============================================================================
 
 
-# CL sweep — sigmoid schedule (STEEP_SIG varies)
-- GROUP: ["CL_base"]
-  CL: [False]
-  CL_TYPE: ["sig"]
-  MAX_PROB_STEP: [0]
-  MAX_OUTER_STEPS_CL: [0]
-  STEEP_SIG: [0]
-  PPO_EPOCHS: [5]
-
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [250]
-  STEEP_SIG: [0.005]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [500]
-  STEEP_SIG: [0.005]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [500]
-  STEEP_SIG: [0.05]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.01]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.05]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [1000]
-  MAX_OUTER_STEPS_CL: [500]
-  STEEP_SIG: [0.005]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [1000]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.05]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [250]
-  STEEP_SIG: [0.005]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [250]
-  STEEP_SIG: [0.01]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [500]
-  STEEP_SIG: [0.05]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.005]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.01]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.05]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_lin]
-  CL: [true]
-  CL_TYPE: [lin]
-  MAX_PROB_STEP: [500]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.01]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_lin]
-  CL: [true]
-  CL_TYPE: [lin]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [250]
-  STEEP_SIG: [0.01]
-  PPO_EPOCHS: [5]
-- GROUP: [CL_lin]
-  CL: [true]
-  CL_TYPE: [lin]
-  MAX_PROB_STEP: [2000]
-  MAX_OUTER_STEPS_CL: [1000]
-  STEEP_SIG: [0.01]
-  PPO_EPOCHS: [5]
-# - GROUP: ["CL_sig"]
-#   CL: [True]
-#   CL_TYPE: ["sig"]
-#   MAX_PROB_STEP: [500, 1000, 2000]
-#   MAX_OUTER_STEPS_CL: [250, 500, 1000]
-#   STEEP_SIG: [0.005, 0.01, 0.05]
-#   PPO_EPOCHS: [5]
-
-# # CL sweep — linear schedule (STEEP_SIG passed but ignored by lin scheduler)
-# - GROUP: ["CL_lin"]
-#   CL: [True]
-#   CL_TYPE: ["lin"]
-#   MAX_PROB_STEP: [500, 1000, 2000]
-#   MAX_OUTER_STEPS_CL: [250, 500, 1000]
-#   STEEP_SIG: [0.01]
-#   PPO_EPOCHS: [5]
+# --- BATCH 0 (ACTIVE): baseline + noise floor -------------------------------
+#   Run the no-CL baseline across seeds. Read: baseline mean +/- std. The std
+#   here IS your empirical significance threshold for every later comparison.
+- GROUP: [P0_baseline]
+  CL: [false]
+  CL_TYPE: [sig]              # ignored when CL=false
+  MAX_OUTER_STEPS_CL: [500]   # ignored
+  MAX_PROB_STEP: [1000]       # ignored
+  STEEP_SIG: [0.01]           # ignored
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [0, 1, 2, 3, 4]
 
 
-
-# - GROUP: [CL_Time_Scaling]
-#   CL: [True]
-#   MAX_PROB_STEP: [1000] # 5x longer training
+# --- BATCH 1: does curriculum help at all? (go / no-go gate) -----------------
+#   CL on (neutral mid-range config) vs off, paired by seed. If CL does not beat
+#   Batch 0 by more than the noise floor, stop here and report a null result.
+# - GROUP: [P1_CL]
+#   CL: [true]
+#   CL_TYPE: [sig]
 #   MAX_OUTER_STEPS_CL: [500]
-#   STEEP_SIG: [0.01] 
-#   CL_TYPE: ["sig"] 
-#   TEST_OUTER_STEPS: [10000]
-
-# - GROUP: ["Critic"]
-#   CRITIC_MODEL: ["ff", "attention"]
-
-# - GROUP: ["test_params"]
-#   COMMENT: ["Reward"]
-#   REWARD: ["dact"]
-#   METROPOLIS: [True]
-#   HEURISTIC: ["insertion"]
-#   INIT: ["random"]
-#   TEST_INIT: ["random"]
-#   MULTI_INIT: [False]
-#   NAZARI: [True]
-#   DATA: ["random"]
-
-# - GROUP: ["test_params"]
-#   COMMENT: ["Metro"]
-#   METROPOLIS: [False]
-#   REWARD: ["immediate"]
-#   HEURISTIC: ["insertion"]
-#   INIT: ["random"]
-#   TEST_INIT: ["random"]
-#   MULTI_INIT: [False]
-#   NAZARI: [True]
-#   DATA: ["random"]
-
-# - GROUP: ["test_params"]
-#   COMMENT: ["Heuristic"]
-#   HEURISTIC: ["swap", "two_opt"]
-#   METROPOLIS: [True]
-#   REWARD: ["immediate"]
-#   INIT: ["random"]
-#   TEST_INIT: ["random"]
-#   MULTI_INIT: [False]
-#   NAZARI: [True]
-#   DATA: ["random"]
-
-# - GROUP: ["test_params_init"]
-#   COMMENT: ["Init_sweep"]
-#   INIT: ["sweep"]
-#   TEST_INIT: ["sweep"]
-#   METROPOLIS: [True]
-#   REWARD: ["immediate"]
-#   HEURISTIC: ["insertion"]
-#   MULTI_INIT: [False]
-#   NAZARI: [True]
-#   DATA: ["random"]
-
-# - GROUP: ["test_params_init"]
-#   COMMENT: ["Init_isolate"]
-#   INIT: ["isolate"]
-#   TEST_INIT: ["isolate"]
-#   METROPOLIS: [True]
-#   REWARD: ["immediate"]
-#   HEURISTIC: ["insertion"]
-#   MULTI_INIT: [False]
-#   NAZARI: [True]
-#   DATA: ["random"]
+#   MAX_PROB_STEP: [1000]
+#   STEEP_SIG: [0.01]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2, 3, 4]
 
 
-# - GROUP: ["test_params_init"]
-#   COMMENT: ["Init_nearest_neighbor"]
-#   INIT: ["nearest_neighbor"]
-#   TEST_INIT: ["nearest_neighbor"]
-#   METROPOLIS: [True]
-#   REWARD: ["immediate"]
-#   HEURISTIC: ["insertion"]
-#   MULTI_INIT: [False]
-#   NAZARI: [True]
-#   DATA: ["random"]
+# --- BATCH 2: schedule shape — sigmoid vs linear ----------------------------
+#   Fix a mid-range warmup; compare the two schedules. Winner -> CL_TYPE below.
+# - GROUP: [P2_sig]
+#   CL: [true]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [500]
+#   MAX_PROB_STEP: [1000]
+#   STEEP_SIG: [0.01]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+# - GROUP: [P2_lin]
+#   CL: [true]
+#   CL_TYPE: [lin]
+#   MAX_OUTER_STEPS_CL: [500]
+#   MAX_PROB_STEP: [1000]
+#   STEEP_SIG: [0.01]           # ignored by lin
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
 
-# - GROUP: ["test_params_init"]
-#   COMMENT: ["Init_multi"]
-#   MULTI_INIT: [True]
-#   INIT: ["random"]
-#   TEST_INIT: ["random"]
-#   METROPOLIS: [True]
-#   REWARD: ["immediate"]
-#   HEURISTIC: ["insertion"]
-#   NAZARI: [True]
-#   DATA: ["random"]
+# --- BATCH 3: warmup strength — MAX_OUTER_STEPS_CL ---------------------------
+#   The number of deterministic pre-improvement steps at full curriculum.
+#   Sweep low->high on the winning schedule. Winner -> MAX_OUTER_STEPS_CL below.
+# - GROUP: [P3_strength]
+#   CL: [true]
+#   CL_TYPE: [sig]              # <-- FIX from Batch 2
+#   MAX_OUTER_STEPS_CL: [100, 250, 500, 1000]
+#   MAX_PROB_STEP: [1000]
+#   STEEP_SIG: [0.01]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
 
-# - GROUP: ["test_params"]
-#   COMMENT: ["CrossDom"]
-#   DATA: ["uchoa"]
-#   NAZARI: [False]
-#   MULTI_INIT: [False]
-#   INIT: ["random"]
-#   TEST_INIT: ["random"]
-#   METROPOLIS: [True]
-#   REWARD: ["immediate"]
-#   HEURISTIC: ["insertion"]
+# --- BATCH 4: ramp duration — MAX_PROB_STEP ---------------------------------
+#   Over how many epochs the warmup ramps from 0 to MAX_OUTER_STEPS_CL.
+#   Winner -> MAX_PROB_STEP below.
+# - GROUP: [P4_ramp]
+#   CL: [true]
+#   CL_TYPE: [sig]              # <-- FIX from Batch 2
+#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [500, 1000, 2000]
+#   STEEP_SIG: [0.01]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
-# # --- BASELINE ---
-# - GROUP: ["Features"]
-#   COMMENT: ["Baseline"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-# # --- LEAVE-ONE-OUT ABLATION ---
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_static"]
-#   features: { static: False, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# --- BATCH 5: sigmoid steepness — STEEP_SIG (only if sig won Batch 2) --------
+#   Controls how sharp the sigmoid ramp is. Skip if linear won. Winner -> below.
+# - GROUP: [P5_steep]
+#   CL: [true]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Batch 4
+#   STEEP_SIG: [0.005, 0.01, 0.05]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_topology"]
-#   features: { static: True, topology: False, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_density5"]
-#   features: { static: True, topology: True, density5: False, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# --- BATCH 6: mechanism ablation — is it the RAMP or just the warmup? --------
+#   Same warmup budget, constant vs ramped. "const" uses a tiny MAX_PROB_STEP so
+#   t_init saturates to MAX_OUTER_STEPS_CL within a few epochs. EARLY_STOP_AFTER
+#   decouples early stopping from MAX_PROB_STEP so BOTH arms train the same
+#   length (set to >= N_EPOCHS to disable early stopping for a clean comparison).
+# - GROUP: [P6_const]
+#   CL: [true]
+#   CL_TYPE: [lin]
+#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [50]         # fast saturation -> ~constant warmup
+#   STEEP_SIG: [0.01]
+#   EARLY_STOP_AFTER: [2000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+# - GROUP: [P6_ramp]
+#   CL: [true]
+#   CL_TYPE: [lin]
+#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Batch 4
+#   STEEP_SIG: [0.01]
+#   EARLY_STOP_AFTER: [2000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_density10"]
-#   features: { static: True, topology: True, density5: True, density10%: False, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
 
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_density33"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
+# --- BATCH 7: final confirmation — best config vs baseline (headline) --------
+#   Put the winning values from Batches 2-5 into P7_best. 5 seeds each gives the
+#   mean +/- std headline number and the significance test for the paper.
 
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_density33_and_density10"]
-#   features: { static: True, topology: True, density5: True, density10%: False, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_detour"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_centroid"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: False, route_pct: True, slack: True, node_pct: True, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_route_pct"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: True, node_pct: True, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_slack"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: False, node_pct: True, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_node_pct"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Ablation_No_meta"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: False }
-
-# # --- THEMATIC ABLATION ---
-# - GROUP: ["Features"]
-#   COMMENT: ["Thematic_Ablation_No_density_features"]
-#   features: { static: True, topology: True, density5: False, density10%: False, density33%: False, detour: True, centroid: True, route_pct: True, slack: True, node_pct: True, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Thematic_Ablation_No_load_capacity_features"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: True, centroid: True, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Thematic_Ablation_No_route_characteristics"]
-#   features: { static: True, topology: True, density5: True, density10%: True, density33%: True, detour: False, centroid: False, route_pct: True, slack: True, node_pct: True, meta: True }
-
-# # --- ISOLATION (Base = static + meta) ---
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_only_static_meta"]
-#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_topology"]
-#   features: { static: True, topology: True, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_density5"]
-#   features: { static: True, topology: False, density5: True, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_density10"]
-#   features: { static: True, topology: False, density5: False, density10%: True, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_density33"]
-#   features: { static: True, topology: False, density5: False, density10%: False, density33%: True, detour: False, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_detour"]
-#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: True, centroid: False, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_centroid"]
-#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: True, route_pct: False, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_route_pct"]
-#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: True, slack: False, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_slack"]
-#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: True, node_pct: False, meta: True }
-
-# - GROUP: ["Features"]
-#   COMMENT: ["Isolation_Base_node_pct"]
-#   features: { static: True, topology: False, density5: False, density10%: False, density33%: False, detour: False, centroid: False, route_pct: False, slack: False, node_pct: True, meta: True }
+# - GROUP: [P7_best]
+#   CL: [true]
+#   CL_TYPE: [sig]              # <-- FIX from Batch 2
+#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Batch 4
+#   STEEP_SIG: [0.01]           # <-- FIX from Batch 5
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2, 3, 4]

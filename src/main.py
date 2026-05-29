@@ -535,8 +535,12 @@ def main(config: dict) -> None:
                 )
 
         # G. Loop termination
+        # Early stopping is suppressed under curriculum until `early_stop_after`
+        # epochs. Defaults to MAX_PROB_STEP, but can be set independently so the
+        # schedule shape (MAX_PROB_STEP) and the early-stop gate are decoupled.
+        early_stop_after = config["EARLY_STOP_AFTER"] or config["MAX_PROB_STEP"]
         if early_stopping_counter > 10 and (
-            not config["CL"] or epoch >= config["MAX_PROB_STEP"]
+            not config["CL"] or epoch >= early_stop_after
         ):
             logger.warning(f"Early stopping triggered at epoch {epoch}")
             break
