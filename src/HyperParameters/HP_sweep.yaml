@@ -44,20 +44,7 @@
 # --- BATCH 1: does curriculum help at all? (go / no-go gate) -----------------
 #   CL on (neutral mid-range config) vs off, paired by seed. If CL does not beat
 #   Batch 0 by more than the noise floor, stop here and report a null result.
-- GROUP: [P1_CL]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_OUTER_STEPS_CL: [500]
-  MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.01]
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2, 3, 4]
-
-
-# --- BATCH 2: schedule shape — sigmoid vs linear ----------------------------
-#   Fix a mid-range warmup; compare the two schedules. Winner -> CL_TYPE below.
-# - GROUP: [P2_sig]
+# - GROUP: [P1_CL]
 #   CL: [true]
 #   CL_TYPE: [sig]
 #   MAX_OUTER_STEPS_CL: [500]
@@ -65,16 +52,29 @@
 #   STEEP_SIG: [0.01]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
-# - GROUP: [P2_lin]
-#   CL: [true]
-#   CL_TYPE: [lin]
-#   MAX_OUTER_STEPS_CL: [500]
-#   MAX_PROB_STEP: [1000]
-#   STEEP_SIG: [0.01]           # ignored by lin
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
+#   SEED: [0, 1, 2, 3, 4]
+
+
+# --- BATCH 2: schedule shape — sigmoid vs linear ----------------------------
+#   Fix a mid-range warmup; compare the two schedules. Winner -> CL_TYPE below.
+- GROUP: [P2_sig]
+  CL: [true]
+  CL_TYPE: [sig]
+  MAX_OUTER_STEPS_CL: [500]
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.01]
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [0, 1, 2]
+- GROUP: [P2_lin]
+  CL: [true]
+  CL_TYPE: [lin]
+  MAX_OUTER_STEPS_CL: [500]
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.01]           # ignored by lin
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [0, 1, 2]
 
 
 # --- BATCH 3: warmup strength — MAX_OUTER_STEPS_CL ---------------------------
