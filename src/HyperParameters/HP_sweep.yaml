@@ -57,38 +57,38 @@
 
 # --- BATCH 2: schedule shape — sigmoid vs linear ----------------------------
 #   Fix a mid-range warmup; compare the two schedules. Winner -> CL_TYPE below.
-- GROUP: [P2_sig]
-  CL: [true]
-  CL_TYPE: [sig]
-  MAX_OUTER_STEPS_CL: [500]
-  MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.01]
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2]
-- GROUP: [P2_lin]
-  CL: [true]
-  CL_TYPE: [lin]
-  MAX_OUTER_STEPS_CL: [500]
-  MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.01]           # ignored by lin
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2]
-
-
-# --- BATCH 3: warmup strength — MAX_OUTER_STEPS_CL ---------------------------
-#   The number of deterministic pre-improvement steps at full curriculum.
-#   Sweep low->high on the winning schedule. Winner -> MAX_OUTER_STEPS_CL below.
-# - GROUP: [P3_strength]
+# - GROUP: [P2_sig]
 #   CL: [true]
-#   CL_TYPE: [sig]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [100, 250, 500, 1000]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [500]
 #   MAX_PROB_STEP: [1000]
 #   STEEP_SIG: [0.01]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2]
+# - GROUP: [P2_lin]
+#   CL: [true]
+#   CL_TYPE: [lin]
+#   MAX_OUTER_STEPS_CL: [500]
+#   MAX_PROB_STEP: [1000]
+#   STEEP_SIG: [0.01]           # ignored by lin
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+
+
+# --- BATCH 3: warmup strength — MAX_OUTER_STEPS_CL ---------------------------
+#   The number of deterministic pre-improvement steps at full curriculum.
+#   Sweep low->high on the winning schedule. Winner -> MAX_OUTER_STEPS_CL below.
+- GROUP: [P3_strength]
+  CL: [true]
+  CL_TYPE: [sig]              # <-- FIX from Batch 2
+  MAX_OUTER_STEPS_CL: [100, 250, 500, 1000]
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.01]
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [0, 1, 2]
 
 
 # --- BATCH 4: ramp duration — MAX_PROB_STEP ---------------------------------
