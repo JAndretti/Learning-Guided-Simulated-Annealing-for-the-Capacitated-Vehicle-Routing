@@ -115,28 +115,28 @@
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2]
 
-- GROUP: [P4_ramp]
-  CL: [true]
-  CL_TYPE: [sig]              # <-- FIX from Batch 2
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-  MAX_PROB_STEP: [500, 1000, 2000]
-  STEEP_SIG: [0.01]
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2]
+# - GROUP: [P4_ramp]
+#   CL: [true]
+#   CL_TYPE: [sig]              # <-- FIX from Batch 2
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [500, 1000, 2000]
+#   STEEP_SIG: [0.01]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
 
 # --- BATCH 5: sigmoid steepness — STEEP_SIG (only if sig won Batch 2) --------
 #   Controls how sharp the sigmoid ramp is. Skip if linear won. Winner -> below.
-# - GROUP: [P5_steep]
-#   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Batch 4
-#   STEEP_SIG: [0.005, 0.01, 0.05]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
+- GROUP: [P5_steep]
+  CL: [true]
+  CL_TYPE: [sig]
+  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+  MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
+  STEEP_SIG: [0.005, 0.01, 0.05]
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [0, 1, 2]
 
 
 # --- BATCH 6: mechanism ablation — is it the RAMP or just the warmup? --------
@@ -147,7 +147,7 @@
 # - GROUP: [P6_const]
 #   CL: [true]
 #   CL_TYPE: [lin]
-#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
 #   MAX_PROB_STEP: [50]         # fast saturation -> ~constant warmup
 #   STEEP_SIG: [0.01]
 #   EARLY_STOP_AFTER: [2000]
@@ -157,8 +157,8 @@
 # - GROUP: [P6_ramp]
 #   CL: [true]
 #   CL_TYPE: [lin]
-#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Batch 4
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
 #   STEEP_SIG: [0.01]
 #   EARLY_STOP_AFTER: [2000]
 #   TEST_OUTER_STEPS: [5000]
