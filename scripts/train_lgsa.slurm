@@ -32,6 +32,6 @@ export UV_LINK_MODE=copy
 
 # 3. Run your code!
 cd $WORK/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing
-# rm -rf wandb/LG-SA/wandb
+rm -rf wandb/LG-SA/wandb
 source .venv/bin/activate
 srun python launch_HP_sweep.py
