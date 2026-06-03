@@ -144,39 +144,39 @@
 #   t_init saturates to MAX_OUTER_STEPS_CL within a few epochs. EARLY_STOP_AFTER
 #   decouples early stopping from MAX_PROB_STEP so BOTH arms train the same
 #   length (set to >= N_EPOCHS to disable early stopping for a clean comparison).
-- GROUP: [P6_const]
-  CL: [true]
-  CL_TYPE: [lin]
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-  MAX_PROB_STEP: [50]         # fast saturation -> ~constant warmup
-  STEEP_SIG: [0.01]
-  EARLY_STOP_AFTER: [2000]
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2]
+# - GROUP: [P6_const]
+#   CL: [true]
+#   CL_TYPE: [lin]
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [50]         # fast saturation -> ~constant warmup
+#   STEEP_SIG: [0.01]
+#   EARLY_STOP_AFTER: [2000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
-- GROUP: [P6_ramp]
-  CL: [true]
-  CL_TYPE: [lin]
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-  MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-  STEEP_SIG: [0.01]
-  EARLY_STOP_AFTER: [2000]
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2]
+# - GROUP: [P6_ramp]
+#   CL: [true]
+#   CL_TYPE: [lin]
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
+#   STEEP_SIG: [0.01]
+#   EARLY_STOP_AFTER: [2000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
 
 
 # --- BATCH 7: final confirmation — best config vs baseline (headline) --------
 #   Put the winning values from Batches 2-5 into P7_best. 5 seeds each gives the
 #   mean +/- std headline number and the significance test for the paper.
 
-# - GROUP: [P7_best]
-#   CL: [true]
-#   CL_TYPE: [sig]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Batch 4
-#   STEEP_SIG: [0.01]           # <-- FIX from Batch 5
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2, 3, 4]
+- GROUP: [P7_best]
+  CL: [true]
+  CL_TYPE: [sig]              # <-- FIX from Batch 2
+  MAX_OUTER_STEPS_CL: [500]   # <-- FIX from Batch 3
+  MAX_PROB_STEP: [1000]       # <-- FIX from Batch 4
+  STEEP_SIG: [0.010]           # <-- FIX from Batch 5
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [0, 1, 2, 3, 4]
