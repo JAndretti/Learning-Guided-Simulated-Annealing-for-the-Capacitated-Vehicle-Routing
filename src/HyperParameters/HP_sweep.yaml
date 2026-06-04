@@ -171,22 +171,57 @@
 #   Put the winning values from Batches 2-5 into P7_best. 5 seeds each gives the
 #   mean +/- std headline number and the significance test for the paper.
 
-- GROUP: [P7_best]
-  CL: [true]
-  CL_TYPE: [sig]              # <-- FIX from Batch 2
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-  MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-  STEEP_SIG: [0.010]           # <-- FIX from Batch 5
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2, 3, 4]
+# - GROUP: [P7_best]
+#   CL: [true]
+#   CL_TYPE: [sig]              # <-- FIX from Batch 2
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
+#   STEEP_SIG: [0.010]           # <-- FIX from Batch 5
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2, 3, 4]
 
-- GROUP: [P7_best_long]
+# - GROUP: [P7_best_long]
+#   CL: [true]
+#   CL_TYPE: [sig]              # <-- FIX from Batch 2
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
+#   STEEP_SIG: [0.010]           # <-- FIX from Batch 5
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [15]
+#   SEED: [0]
+
+
+# --- BATCH 8: follow-ups from the P_final_res analysis ----------------------
+#   Two independent confirmations flagged by the analysis (res/P_final_res):
+#     (a) P8_long_confirm: P7_best_long was n=1, so the -3.2% long-PPO number is
+#         a single seed, not a measurement. Re-run with 5 seeds to confirm the
+#         long-PPO gain holds (and report mean +/- std). Seed 0 already exists in
+#         P7_best_long; it is re-listed here so all seeds share one GROUP/eval.
+#     (b) P8_plateau: MOS=100/MPS=1000/lin was among the best cells in Batches
+#         3-4 yet is statistically tied with the chosen P7_best (sig/250/2000).
+#         Run it at the SAME budget as P7_best (PPO_EPOCHS=3, 5 seeds) so the two
+#         can be compared seed-paired. EXPECTATION: no significant difference ->
+#         demonstrates the hyperparameter PLATEAU explicitly. Compare against the
+#         EXISTING res/P7_best (no need to re-run P7_best).
+#   Note: both groups list the identical key set (launcher rule); they differ
+#   only in values (PPO_EPOCHS, CL_TYPE, MAX_OUTER_STEPS_CL, MAX_PROB_STEP).
+- GROUP: [P8_long_confirm]
   CL: [true]
   CL_TYPE: [sig]              # <-- FIX from Batch 2
   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-  STEEP_SIG: [0.010]           # <-- FIX from Batch 5
+  STEEP_SIG: [0.010]          # <-- FIX from Batch 5
   TEST_OUTER_STEPS: [5000]
   PPO_EPOCHS: [15]
-  SEED: [0]
+  SEED: [0, 1, 2, 3, 4]
+
+# - GROUP: [P8_plateau]
+#   CL: [true]
+#   CL_TYPE: [lin]              # cheap cell that tied for best in Batch 3/4
+#   MAX_OUTER_STEPS_CL: [100]
+#   MAX_PROB_STEP: [1000]
+#   STEEP_SIG: [0.010]          # ignored by lin
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
+#   SEED: [0, 1, 2, 3, 4]
