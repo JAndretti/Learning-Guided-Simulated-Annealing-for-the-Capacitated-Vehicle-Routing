@@ -206,22 +206,22 @@
 #         EXISTING res/P7_best (no need to re-run P7_best).
 #   Note: both groups list the identical key set (launcher rule); they differ
 #   only in values (PPO_EPOCHS, CL_TYPE, MAX_OUTER_STEPS_CL, MAX_PROB_STEP).
-- GROUP: [P8_long_confirm]
-  CL: [true]
-  CL_TYPE: [sig]              # <-- FIX from Batch 2
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-  MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-  STEEP_SIG: [0.010]          # <-- FIX from Batch 5
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [15]
-  SEED: [0, 1, 2, 3, 4]
-
-# - GROUP: [P8_plateau]
+# - GROUP: [P8_long_confirm]
 #   CL: [true]
-#   CL_TYPE: [lin]              # cheap cell that tied for best in Batch 3/4
-#   MAX_OUTER_STEPS_CL: [100]
-#   MAX_PROB_STEP: [1000]
-#   STEEP_SIG: [0.010]          # ignored by lin
+#   CL_TYPE: [sig]              # <-- FIX from Batch 2
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
+#   STEEP_SIG: [0.010]          # <-- FIX from Batch 5
 #   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
+#   PPO_EPOCHS: [15]
 #   SEED: [0, 1, 2, 3, 4]
+
+- GROUP: [P8_plateau]
+  CL: [true]
+  CL_TYPE: [lin]              # cheap cell that tied for best in Batch 3/4
+  MAX_OUTER_STEPS_CL: [100]
+  MAX_PROB_STEP: [1000]
+  STEEP_SIG: [0.010]          # ignored by lin
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
+  SEED: [0, 1, 2, 3, 4]
