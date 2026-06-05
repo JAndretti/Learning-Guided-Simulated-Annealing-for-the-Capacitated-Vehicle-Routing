@@ -214,7 +214,7 @@
 #   STEEP_SIG: [0.010]          # <-- FIX from Batch 5
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [15]
-#   SEED: [0, 1, 2, 3, 4]
+#   SEED: [4, 5, 6, 7]
 
 - GROUP: [P8_plateau]
   CL: [true]
