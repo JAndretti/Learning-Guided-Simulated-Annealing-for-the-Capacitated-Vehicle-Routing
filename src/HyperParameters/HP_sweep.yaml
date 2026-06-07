@@ -256,5 +256,5 @@
   CL_RANDOM_DEPTH: [true]     # per-instance depth d_i ~ U{0..t_init}
   TEST_OUTER_STEPS: [5000]
   PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
-  SEED: [0, 1, 2, 3]
+  SEED: [4]
 
