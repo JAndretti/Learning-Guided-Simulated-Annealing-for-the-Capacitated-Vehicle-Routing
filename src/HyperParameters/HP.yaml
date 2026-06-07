@@ -85,6 +85,7 @@ MAX_PROB_STEP: 1000 # Step to calcul the curriculum step
 MAX_OUTER_STEPS_CL: 500 # Max outer steps for curriculum learning (pre steps)
 STEEP_SIG: 0.01 # Steepness of the sigmoid function for curriculum learning
 CL_TYPE: "sig" # Curriculum learning schedule type: sig or lin
+CL_RANDOM_DEPTH: False # If True, warm each instance to its own depth d_i ~ U{0..t_init} instead of all to t_init
 EARLY_STOP_AFTER: 0 # Epoch after which early stopping may trigger under CL; 0 -> follow MAX_PROB_STEP
 
 # =============== Testing during training ===============

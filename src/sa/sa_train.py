@@ -326,6 +326,7 @@ def sa_train(
     epoch: int = 0,
     device: str = "",
     desc_tqdm: str = "Simulated Annealing Progress",
+    freeze_after: torch.Tensor = None,
 ) -> Dict[str, torch.Tensor]:
     """
     Main Neural Simulated Annealing Loop.
@@ -417,6 +418,15 @@ def sa_train(
         else:
             is_accepted = torch.ones_like(cost_improvement)
             actual_improvement = cost_improvement
+
+        # Per-instance curriculum depth: once an instance reaches its sampled
+        # warmup depth d_i, freeze it (reject every further move) so its returned
+        # solution is the SA state at exactly d_i steps. No-op when freeze_after
+        # is None (the default), so existing callers are unaffected.
+        if freeze_after is not None:
+            active = (step < freeze_after).to(is_accepted.dtype)
+            is_accepted = is_accepted * active
+            actual_improvement = actual_improvement * active
 
         tracking["is_valid_history"].append(is_valid.float().mean().item())
         tracking["accepted_moves"] += is_accepted

@@ -214,14 +214,47 @@
 #   STEEP_SIG: [0.010]          # <-- FIX from Batch 5
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [15]
-#   SEED: [4, 5, 6, 7]
+#   SEED: [0, 1, 2, 3, 4]
 
-- GROUP: [P8_plateau]
+# - GROUP: [P8_plateau]
+#   CL: [true]
+#   CL_TYPE: [lin]              # cheap cell that tied for best in Batch 3/4
+#   MAX_OUTER_STEPS_CL: [100]
+#   MAX_PROB_STEP: [1000]
+#   STEEP_SIG: [0.010]          # ignored by lin
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
+#   SEED: [0, 1, 2, 3, 4]
+
+
+# --- BATCH 9: per-instance random warmup depth ------------------------------
+#   New mechanism (not a hyperparameter of the existing curriculum): instead of
+#   warming EVERY instance to the same depth t_init each epoch, draw a per-instance
+#   depth d_i ~ U{0..t_init}. So within one batch d_i=0 leaves an instance at its
+#   raw heuristic init while d_i=t_init gives the full warmup, and everything in
+#   between -> every gradient update sees the WHOLE cost spectrum, not just the
+#   refined end. Hypothesis: keeps the policy competent on the high-cost early part
+#   of the test trajectory (train/test coverage), so the payoff should show up in
+#   ROBUSTNESS / OUT-OF-DISTRIBUTION eval more than in the in-distribution headline.
+#   Toggle: CL_RANDOM_DEPTH (false = current uniform warmup, true = per-instance).
+#   Batch compute is IDENTICAL to P7_best (frozen instances still run the loop,
+#   their moves are just masked), so this is a clean apples-to-apples comparison.
+#
+#   COMPARISON: P9_random_depth is P7_best with CL_RANDOM_DEPTH=true, same config,
+#   same 5 seeds -> seed-paired against the EXISTING res/P7_best (no need to re-run
+#   P7_best; it predates the flag and is equivalent to CL_RANDOM_DEPTH=false).
+#   EVAL: besides nazari dim-100, evaluate these checkpoints OUT-OF-DISTRIBUTION
+#   (e.g. a different dim and/or uchoa) — that is where the coverage benefit, if
+#   real, is expected to appear. Report the cost-vs-SA-step curve at test, not just
+#   the final cost, to check whether the early/high-cost segment improves.
+# - GROUP: [P9_random_depth]
   CL: [true]
-  CL_TYPE: [lin]              # cheap cell that tied for best in Batch 3/4
-  MAX_OUTER_STEPS_CL: [100]
-  MAX_PROB_STEP: [1000]
-  STEEP_SIG: [0.010]          # ignored by lin
+  CL_TYPE: [sig]              # <-- FIX from Batch 2
+  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+  MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
+  STEEP_SIG: [0.010]          # <-- FIX from Batch 5
+  CL_RANDOM_DEPTH: [true]     # per-instance depth d_i ~ U{0..t_init}
   TEST_OUTER_STEPS: [5000]
   PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
   SEED: [0, 1, 2, 3, 4]
+

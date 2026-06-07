@@ -283,6 +283,18 @@ def train_ppo(
             config["TEST_OUTER_STEPS"] = t_init
             pre_step = t_init
 
+            # Per-instance random depth: instead of warming every instance to the
+            # same depth t_init, draw d_i ~ U{0..t_init} per instance so each batch
+            # covers the full cost spectrum (d_i=0 -> raw init, d_i=t_init -> full
+            # warmup). Same batch compute as the uniform warmup (frozen instances
+            # still run the loop, their moves are just masked out).
+            freeze_after = None
+            if config.get("CL_RANDOM_DEPTH", False):
+                n_inst = initial_solutions.shape[0]
+                freeze_after = torch.randint(
+                    0, t_init + 1, (n_inst,), device=initial_solutions.device
+                )
+
             # Run deterministic improvement
             pre_res_td, _ = sa_train(
                 actor=actor,
@@ -293,6 +305,7 @@ def train_ppo(
                 baseline=False,
                 greedy=False,
                 train=False,
+                freeze_after=freeze_after,
             )
 
             # Use improved solutions as start point for training
