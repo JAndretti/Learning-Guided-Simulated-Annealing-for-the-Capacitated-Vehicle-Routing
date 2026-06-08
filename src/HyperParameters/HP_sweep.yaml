@@ -248,13 +248,440 @@
 #   real, is expected to appear. Report the cost-vs-SA-step curve at test, not just
 #   the final cost, to check whether the early/high-cost segment improves.
 # - GROUP: [P9_random_depth]
-  CL: [true]
-  CL_TYPE: [sig]              # <-- FIX from Batch 2
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-  MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-  STEEP_SIG: [0.010]          # <-- FIX from Batch 5
-  CL_RANDOM_DEPTH: [true]     # per-instance depth d_i ~ U{0..t_init}
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
-  SEED: [4]
+  # CL: [true]
+  # CL_TYPE: [sig]              # <-- FIX from Batch 2
+  # MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
+  # MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
+  # STEEP_SIG: [0.010]          # <-- FIX from Batch 5
+  # CL_RANDOM_DEPTH: [true]     # per-instance depth d_i ~ U{0..t_init}
+  # TEST_OUTER_STEPS: [5000]
+  # PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
+  # SEED: [0, 1, 2, 3, 4]
 
+
+# ============================================================================
+# PAPER VALIDATION PROTOCOL — SEQUENTIAL (coordinate descent), Nazari/random
+# ============================================================================
+# Same philosophy as the curriculum protocol above, but as a CHAIN. Each batch
+# sweeps ONE axis; you bake its winner into HP.yaml (the single source of truth)
+# before running the next batch, so every later batch inherits all prior winners.
+#
+# RULES
+#   * PPO_EPOCHS = 3 for ALL component batches (V1-V8) to keep training cheap.
+#     The impact of PPO_EPOCHS is measured on its own in V9; the final model
+#     (V10) then uses the best value.
+#   * CL = false for ALL component batches (V1-V9): isolate each component
+#     WITHOUT the curriculum confound. Curriculum is validated separately by the
+#     P0-P9 batches above; its winner (sig, xi_CL=250, E=2000, kappa=0.01) is
+#     folded back in only for the final model (V10).
+#   * After batch Vn: evaluate (command in each batch), pick the lowest MEAN
+#     final_cost over seeds, and IF the winner differs from the current HP.yaml
+#     default, WRITE IT INTO HP.yaml before launching V(n+1). That is what
+#     "keep the best config and go to the next" means here.
+#   * HP.yaml today already encodes the expected optimum (insertion / valid /
+#     ff critic / EMBEDDING_DIM=32 / NUM_H_LAYERS=1 / lam / immediate /
+#     metropolis / random / route_pct=false), so if a batch's winner matches the
+#     default you do not need to change anything.
+#   * Launcher rule unchanged: uncomment exactly ONE batch at a time; all of its
+#     groups must list the same keys.
+#
+# ORDER (foundational search mechanics first; the operator must be fixed before
+# features mean anything; PPO budget last so it is tuned on the final config):
+#   V1 heuristic x feasibility -> V2 features -> V3 actor arch -> V4 critic ->
+#   V5 reward -> V6 temperature -> V7 metropolis(train) -> V8 init ->
+#   X1 learning rate -> X2 entropy -> X3 SA rollout -> X4 temperature range ->
+#   [P0-P9 curriculum, already done] -> V9 PPO epochs -> V10 FINAL model ->
+#   V11 cross-distribution -> V12 cross-dimension.
+#
+# EVAL PATTERN (Nazari/random; one command per GROUP folder; swept keys appear
+# as CSV columns, so a cross-product folder disaggregates by HEURISTIC/REWARD/.):
+#   uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 \
+#       --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#   (drop --no-baseline for the pure-SA row; --augment 8 for x8; --no-metro for
+#    the descent test column; --INIT <type> to change the test init.)
+# ============================================================================
+
+
+# --- V1: search operator x feasibility (Table heuristic_feasibility) --------
+#   Fixed so far: nothing (first axis). Expect insertion + valid (Proactive).
+#   -> bake winner into HP.yaml: HEURISTIC, UPDATE_METHOD.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V1_heur_feas --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+- GROUP: [V1_heur_feas]
+  HEURISTIC: [insertion, swap, two_opt]
+  UPDATE_METHOD: [valid, free, rm_depot]   # valid=Proactive, free=Indirect, rm_depot=Reactive (CONFIRM)
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
+
+
+# --- V2: feature ablation (Tables loo_ablation + isolation_ablation) ---------
+#   Fixed so far (in HP.yaml): HEURISTIC, UPDATE_METHOD (from V1).
+#   One folder PER arm (the `features` dict cannot be a disaggregating column).
+#   -> bake the winning feature set into HP.yaml `features`.
+#   EVAL (per folder): uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#
+#   -- baseline: ALL features on (incl. route_pct / L_r) --
+# - GROUP: [V2_feat_all]
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+#   -- leave-one-out (remove one group from the all-on baseline) --
+# - GROUP: [V2_loo_no_static]
+#   features: [{static: false, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_topology]
+#   features: [{static: true, topology: false, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_detour]
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: false, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_meta]
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: false}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_slack]
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: false, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_centroid]
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: false, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_density33]
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: false, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_density10]
+#   features: [{static: true, topology: true, density5: true, density10%: false, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_density5]
+#   features: [{static: true, topology: true, density5: false, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_node_pct]
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_feat_no_route_pct]      # current HP.yaml default (pruned L_r)
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+#   -- thematic ablations --
+# - GROUP: [V2_thematic_no_geometry]   # remove detour + centroid
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: false, centroid: false, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_thematic_no_capacity]   # remove route_pct + slack + node_pct
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_thematic_no_density]    # remove density5 + density10% + density33%
+#   features: [{static: true, topology: true, density5: false, density10%: false, density33%: false, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+#   -- isolation: base (static+meta only) + ONE feature --
+# - GROUP: [V2_iso_base]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_detour]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: true, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_topology]
+#   features: [{static: true, topology: true, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_centroid]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: true, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_density10]
+#   features: [{static: true, topology: false, density5: false, density10%: true, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_density33]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: true, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_density5]
+#   features: [{static: true, topology: false, density5: true, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_route_pct]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: true, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_slack]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: true, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_node_pct]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V3: actor network capacity (Table architecture_comp) -------------------
+#   Fixed so far (HP.yaml): operator + feasibility + feature set. Expect 32/1.
+#   -> bake winner into HP.yaml: EMBEDDING_DIM, NUM_H_LAYERS.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V3_arch --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V3_arch]
+#   EMBEDDING_DIM: [16, 32, 64]
+#   NUM_H_LAYERS: [1, 2]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V4: critic architecture (paragraph "Critic Architecture") --------------
+#   Fixed so far (HP.yaml): + actor architecture. Expect ff.
+#   -> bake winner into HP.yaml: CRITIC_MODEL.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V4_critic --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V4_critic]
+#   CRITIC_MODEL: [ff, attention]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V5: reward formulation (Table reward_formulations) ----------------------
+#   Fixed so far (HP.yaml): + critic. Expect immediate; step_penalty_* collapse.
+#   -> bake winner into HP.yaml: REWARD.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V5_reward --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V5_reward]
+#   REWARD: [immediate, sa_aligned, global_best, terminal, hybrid, curriculum, curriculum_terminal, step_penalty_init, step_penalty_16]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V6: temperature schedule (Table temp_scheduling) -----------------------
+#   Fixed so far (HP.yaml): + reward. Expect lam (exponential).
+#   -> bake winner into HP.yaml: SCHEDULER.   (lam=exponential, step=step decay; CONFIRM)
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V6_sched --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V6_sched]
+#   SCHEDULER: [lam, step]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V7: Metropolis criterion at TRAIN time (Table metropolis_ablation) -----
+#   Fixed so far (HP.yaml): + schedule. Expect train-Metropolis. The 2x2 (train x
+#   test) table is finished at eval time by re-running with/without --no-metro.
+#   -> bake winner into HP.yaml: METROPOLIS.
+#   EVAL (test=Metropolis): uv run eval/run.py --dataset random --FOLDER V7_metro --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#   EVAL (test=Descent):    ... --FOLDER V7_metro ... --no-metro
+# - GROUP: [V7_metro]
+#   METROPOLIS: [true, false]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V8: initialization strategy (Table init_generalization) ----------------
+#   Fixed so far (HP.yaml): + metropolis. Expect random. The cross-init table is
+#   finished at eval time with --INIT {random,sweep,nearest_neighbor,isolate}.
+#   -> bake winner into HP.yaml: INIT (and MULTI_INIT).
+#   EVAL (per train folder, per test init):
+#     uv run eval/run.py --dataset random --FOLDER V8_init_single --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline --INIT random
+#     (repeat with --INIT sweep | nearest_neighbor | isolate; and --FOLDER V8_init_multi)
+# - GROUP: [V8_init_single]
+#   INIT: [random, sweep, nearest_neighbor, isolate]
+#   MULTI_INIT: [false]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V8_init_multi]
+#   INIT: [random]                # ignored when MULTI_INIT=true (uses INIT_LIST)
+#   MULTI_INIT: [true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- X1: learning rate (LR_ACTOR / LR_CRITIC) -------------------------------
+#   Fixed so far (HP.yaml): all of V1-V8. The single most impactful knob the
+#   paper never sweeps; tune it here, on the fixed architecture, before curriculum.
+#   -> bake winner into HP.yaml: LR_ACTOR, LR_CRITIC.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER X1_lr --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [X1_lr]
+#   LR_ACTOR: [0.0003, 0.001, 0.003]
+#   LR_CRITIC: [0.0003, 0.001, 0.003]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- X2: PPO exploration (entropy coefficient) ------------------------------
+#   Fixed so far (HP.yaml): + learning rate. -> bake winner into HP.yaml: ENT_COEF.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER X2_entropy --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [X2_entropy]
+#   ENT_COEF: [0.0, 0.01, 0.05]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- X3: SA training rollout length (steps per PPO batch) -------------------
+#   Fixed so far (HP.yaml): + entropy. -> bake winner into HP.yaml: OUTER_STEPS.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER X3_rollout --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [X3_rollout]
+#   OUTER_STEPS: [50, 100, 200]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- X4: SA temperature RANGE (complements the schedule ablation V6) ---------
+#   Fixed so far (HP.yaml): + rollout. -> bake winner into HP.yaml: INIT_TEMP, STOP_TEMP.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER X4_temp_range --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [X4_temp_range]
+#   INIT_TEMP: [0.5, 1, 2]
+#   STOP_TEMP: [0.01, 0.1]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# ---- [CURRICULUM] run the P0-P9 batches above. Winner already established:
+#      sig, xi_CL=250, E=2000, kappa=0.01. Bake into HP.yaml for V10-V12. ------
+
+
+# --- V9: impact of PPO inner epochs (CL false) ------------------------------
+#   With the whole architecture/feature/reward/SA config now fixed in HP.yaml,
+#   sweep the PPO training budget. CL stays false to isolate it.
+#   -> use the winner as PPO_EPOCHS in V10-V12.
+#   NOTE: with curriculum ON, P8 already showed PPO=15 beats PPO=3, so the best
+#   PPO *with* curriculum may exceed this CL-off optimum; V10 is where they meet.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V9_ppo_epochs --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V9_ppo_epochs]
+#   PPO_EPOCHS: [1, 3, 5, 10, 15, 20]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V10: FINAL deployed model = best config + best curriculum + best PPO ----
+#   All component winners are in HP.yaml. Here we (a) turn the BEST curriculum
+#   back on (P0-P9) and (b) set PPO_EPOCHS to the V9 winner, then train 5 seeds.
+#   Deploy the best checkpoint for SOTA / scaling / the headline number (this is
+#   the model that should replace the old xi_CL=500 champion once re-run).
+#   EVAL — headline (10k):     uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16
+#   EVAL — x8 augment:         uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS 10000 --augment 8 --dtype float16   (repeat --dim 50)
+#   EVAL — scaling over dims:  for D in 10 20 50 100; do uv run eval/run.py --dataset random --FOLDER V10_final --dim $D --DATA nazari --OUTER_STEPS 10000 --dtype float16; done
+#   EVAL — scaling over steps: for S in 100 1000 5000 10000 100000 200000 500000 1000000; do uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS $S --dtype float16; done
+# - GROUP: [V10_final]
+#   CL: [true]
+#   CL_TYPE: [sig]              # <-- best curriculum (from P0-P9)
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
+#   STEEP_SIG: [0.010]
+#   PPO_EPOCHS: [3]            # <-- FIX from V9 (P8 suggests 15 may be better with CL)
+#   SEED: [0, 1, 2, 3, 4]
+
+
+# --- V11: cross-distribution generalization (Table data_generalization) ------
+#   FINAL config trained on Nazari random vs Queiroga/Uchoa; both tested on
+#   Nazari (here) and Uchoa. Expect random-trained to win on BOTH.
+#   EVAL on Nazari: uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#   EVAL on Uchoa:  uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA uchoa  --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V11_dist]
+#   DATA: [random, uchoa]
+#   CL: [true]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
+#   STEEP_SIG: [0.010]
+#   PPO_EPOCHS: [3]            # <-- FIX from V9
+#   SEED: [0, 1, 2]
+
+
+# --- V12: cross-dimension generalization ------------------------------------
+#   FINAL config trained at each dim, cross-tested at every test dim {50,100,500}.
+#   Training capacity (MAX_LOAD) must match the Nazari convention per dim:
+#   50:Q=40, 100:Q=50, 500:Q=50 -> pinned with PROBLEM_DIM in separate groups.
+#   N=500 training is memory-heavy; lower N_PROBLEMS if it OOMs.
+#   CROSS-TEST: for TD in 50 100 500; do for F in V12_dim50 V12_dim100 V12_dim500; do \
+#     uv run eval/run.py --dataset random --FOLDER $F --dim $TD --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline; done; done
+# - GROUP: [V12_dim50]
+#   PROBLEM_DIM: [50]
+#   MAX_LOAD: [40]
+#   TEST_DIMENSION: [50]
+#   CL: [true]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
+#   STEEP_SIG: [0.010]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+# - GROUP: [V12_dim100]
+#   PROBLEM_DIM: [100]
+#   MAX_LOAD: [50]
+#   TEST_DIMENSION: [100]
+#   CL: [true]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
+#   STEEP_SIG: [0.010]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+# - GROUP: [V12_dim500]
+#   PROBLEM_DIM: [500]
+#   MAX_LOAD: [50]
+#   TEST_DIMENSION: [500]
+#   CL: [true]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
+#   STEEP_SIG: [0.010]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+
+
+# ============================================================================
+# OPTIONAL EXTRA BATCHES (not in the paper; high value, same rules)
+# ============================================================================
+# X1-X4 are now part of the chain above (after V8). What remains here is the
+# eval-only precision study plus ideas not pre-written.
+#
+#   X5 Inference numerical precision -- EVAL-ONLY, no training (re-run V10):
+#     for P in float32 bfloat16 float16; do uv run eval/run.py --dataset random \
+#       --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype $P; done
+#
+#   Other ideas (not pre-written):
+#     * PPO trust region: EPS_CLIP, TARGET_KL, BETA_KL, GP_LAMBDA.
+#     * GAE: GAMMA, TRACE_DECAY.
+#     * Train§§§ing diversity: N_PROBLEMS, BATCH_SIZE, N_EPOCHS / early stopping.
+#     * Inference diversification (reheating / LNS) -- paper found net-negative;
+#       re-confirm as an EVAL-only study if revisited.
+# ============================================================================
