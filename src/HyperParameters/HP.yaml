@@ -34,12 +34,14 @@ NORMALIZE_REWARD: False # Normalize reward to have mean 0 and std 1
 features:
   static: True          # coords, angles, depot info
   topology: True        # prev/next neighbors
+  neighbor_rank: True  # distance-rank of prev/next neighbors (2 dims)
+  demand_max: True     # demand / largest demand in instance
   density5: True       # mean distance to 5 nearest neighbors
   density10%: True      # mean distance to 10% nearest neighbors
   density33%: True      # mean distance to 33% nearest neighbors
   detour: True          # detour
   centroid: True        # route centroid
-  route_pct: False       # load of the route
+  route_pct: True       # load of the route
   slack: True          # remaining load of the route
   node_pct: True       # node demand percentage with route capacity
   meta: True            # temp, time

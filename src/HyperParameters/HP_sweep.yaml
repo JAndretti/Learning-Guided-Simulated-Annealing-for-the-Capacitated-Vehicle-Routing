@@ -449,6 +449,36 @@
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
+#   -- NEW FEATURES: neighbor_rank (distance-rank of route prev/next) + demand_max
+#      (demand / largest demand). Both default off; the existing V2 dicts above omit
+#      them (-> off), so the all-on/LOO baselines keep their original meaning.
+#      isolation: base (static+meta) + the one new feature; add-on: current HP.yaml
+#      default feature set + the new feature(s) -> "does it help on top of the best set".
+# - GROUP: [V2_iso_neighbor_rank]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, neighbor_rank: true, demand_max: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_demand_max]
+#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, neighbor_rank: false, demand_max: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_add_neighbor_rank]      # current HP.yaml default + neighbor_rank
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, neighbor_rank: true, demand_max: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_add_demand_max]         # current HP.yaml default + demand_max
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, neighbor_rank: false, demand_max: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_add_both]               # current HP.yaml default + both new features
+#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, neighbor_rank: true, demand_max: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V3: actor network capacity (Table architecture_comp) -------------------

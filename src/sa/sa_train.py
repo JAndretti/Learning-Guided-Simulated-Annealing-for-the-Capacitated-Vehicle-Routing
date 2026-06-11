@@ -2,7 +2,6 @@
 # SIMULATED ANNEALING TRAINER
 # ============================================================================
 
-from typing import Dict, Tuple
 
 import torch
 from tensordict import TensorDict
@@ -19,23 +18,17 @@ from .scheduler import Scheduler
 # ============================================================================
 
 
-def scale_between(
-    value: torch.Tensor, min_value: float, max_value: float
-) -> torch.Tensor:
+def scale_between(value: torch.Tensor, min_value: float, max_value: float) -> torch.Tensor:
     """Scales a [0, 1] value to [min, max]."""
     return min_value + (max_value - min_value) * value
 
 
-def scale_to_unit(
-    value: torch.Tensor, min_value: float, max_value: float
-) -> torch.Tensor:
+def scale_to_unit(value: torch.Tensor, min_value: float, max_value: float) -> torch.Tensor:
     """Scales a [min, max] value to [0, 1]."""
     return (value - min_value) / (max_value - min_value)
 
 
-def normalize(
-    actual_improvement: torch.Tensor, initial_cost: torch.Tensor
-) -> torch.Tensor:
+def normalize(actual_improvement: torch.Tensor, initial_cost: torch.Tensor) -> torch.Tensor:
     """Scales improvement to [-1, 1] based on an expected max relative improvement."""
     MAX_EXPECTED_REL_IMPROVEMENT = 0.2
     relative_improvement = actual_improvement / initial_cost
@@ -47,9 +40,7 @@ def normalize(
 # ============================================================================
 
 
-def initialize_optimization_state(
-    problem: CVRP, initial_solution: torch.Tensor, device: str
-):
+def initialize_optimization_state(problem: CVRP, initial_solution: torch.Tensor, device: str):
     """Initializes a TensorDict for solution, costs, and tracking metrics."""
     best_cost = problem.cost(initial_solution)
     n = initial_solution.shape[0]
@@ -98,7 +89,7 @@ def initialize_tracking_variables():
 
 def metropolis_accept(
     cost_improvement: torch.Tensor, current_temp: torch.Tensor, device: str
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Metropolis-Hastings acceptance criterion.
     Accept if improvement > 0 OR random < exp(improvement / temp).
@@ -228,11 +219,7 @@ def calculate_reward(
             if config["NORMALIZE_REWARD"]
             else actual_improvement
         )
-        is_acc = (
-            is_accepted.bool().squeeze(-1)
-            if is_accepted.dim() > 1
-            else is_accepted.bool()
-        )
+        is_acc = is_accepted.bool().squeeze(-1) if is_accepted.dim() > 1 else is_accepted.bool()
         sa_reward = torch.where(
             is_acc & (actual_improvement > 0),
             val_imm,
@@ -270,11 +257,7 @@ def calculate_reward(
             if config["NORMALIZE_REWARD"]
             else actual_improvement
         )
-        is_acc = (
-            is_accepted.bool().squeeze(-1)
-            if is_accepted.dim() > 1
-            else is_accepted.bool()
-        )
+        is_acc = is_accepted.bool().squeeze(-1) if is_accepted.dim() > 1 else is_accepted.bool()
         sa_reward = torch.where(
             is_acc & (actual_improvement > 0),
             val_imm,
@@ -327,7 +310,7 @@ def sa_train(
     device: str = "",
     desc_tqdm: str = "Simulated Annealing Progress",
     freeze_after: torch.Tensor = None,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Main Neural Simulated Annealing Loop.
     Generates actions via 'actor', accepts/rejects via Metropolis, and logs data.
@@ -351,18 +334,14 @@ def sa_train(
     if record_state:
         tracking["solution_history"].append(opt_state["current_solution"])
 
-    current_temp = torch.tensor([1], device=device).repeat(
-        opt_state["best_cost"].shape[0]
-    )
+    current_temp = torch.tensor([1], device=device).repeat(opt_state["best_cost"].shape[0])
     current_temp = scale_between(current_temp, config["STOP_TEMP"], config["INIT_TEMP"])
 
     tracking["temperature"].append(current_temp.clone())
     tracking["cost_history"].append(opt_state["current_cost"].clone())
 
     # Build Initial State Tensor
-    normalized_temp = scale_to_unit(
-        current_temp, config["STOP_TEMP"], config["INIT_TEMP"]
-    )
+    normalized_temp = scale_to_unit(current_temp, config["STOP_TEMP"], config["INIT_TEMP"])
     current_state = problem.to_state(
         *problem.build_state_components(
             opt_state["current_solution"],
@@ -447,8 +426,7 @@ def sa_train(
         is_accepted_expanded = extend_to(is_accepted, sol_components)
 
         opt_state["current_solution"] = (
-            is_accepted_expanded * proposed_sol
-            + (1 - is_accepted_expanded) * sol_components
+            is_accepted_expanded * proposed_sol + (1 - is_accepted_expanded) * sol_components
         ).long()
 
         # Sync problem internal state
@@ -468,22 +446,14 @@ def sa_train(
             is_imp_expanded * opt_state["current_solution"]
             + (1 - is_imp_expanded) * opt_state["best_solution"]
         )
-        opt_state["best_cost"] = torch.minimum(
-            opt_state["current_cost"], opt_state["best_cost"]
-        )
+        opt_state["best_cost"] = torch.minimum(opt_state["current_cost"], opt_state["best_cost"])
         opt_state["best_cost_step"] = torch.max(
             is_improvement * (step + 1), opt_state["best_cost_step"]
         )
-        opt_state["cumulative_cost"] += (
-            opt_state["best_cost"] / opt_state["initial_cost"]
-        )
+        opt_state["cumulative_cost"] += opt_state["best_cost"] / opt_state["initial_cost"]
 
         # 7. Temperature & State Update
-        next_temp = (
-            scheduler.step(step)
-            .to(device)
-            .repeat(opt_state["current_solution"].shape[0])
-        )
+        next_temp = scheduler.step(step).to(device).repeat(opt_state["current_solution"].shape[0])
         current_temp = next_temp
 
         # Prepare next state
@@ -491,9 +461,7 @@ def sa_train(
         model_temp = scale_to_unit(next_temp, config["STOP_TEMP"], config["INIT_TEMP"])
 
         next_state = problem.to_state(
-            *problem.build_state_components(
-                opt_state["current_solution"], model_temp, adv
-            )
+            *problem.build_state_components(opt_state["current_solution"], model_temp, adv)
         ).to(device)
 
         tracking["temperature"].append(current_temp.detach())

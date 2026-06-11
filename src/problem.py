@@ -3,7 +3,6 @@
 # ============================================================================
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -29,6 +28,7 @@ from utils import (
     calculate_detour_features,
     calculate_distance_matrix,
     calculate_knn_isolation,
+    calculate_neighbor_rank_features,
     is_feasible,
     repeat_to,
 )
@@ -74,12 +74,12 @@ class Problem(ABC):
     @abstractmethod
     def update(
         self, solution: torch.Tensor, action: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply an action to the solution and return (new_solution, is_valid)."""
         pass
 
     @abstractmethod
-    def set_params(self, params: Dict) -> None:
+    def set_params(self, params: dict) -> None:
         """Set specific instance parameters (coords, demands, etc.)."""
         pass
 
@@ -104,7 +104,7 @@ class Problem(ABC):
         """Concatenates feature tensors into a single state tensor."""
         return torch.cat(components, dim=-1)
 
-    def from_state(self, state: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def from_state(self, state: torch.Tensor) -> tuple[torch.Tensor, ...]:
         """Splits the state tensor back into its components."""
         return state[:, :, 0].unsqueeze(-1), state[:, :, 1:]
 
@@ -127,7 +127,7 @@ class CVRP(Problem):
         dim: int = 50,
         n_problems: int = 256,
         device: str = "cpu",
-        params: Optional[Dict] = None,
+        params: dict | None = None,
     ):
         super().__init__(device)
         self.params = params or {}
@@ -151,15 +151,13 @@ class CVRP(Problem):
         if self.heuristic is None:
             raise ValueError(f"Unsupported heuristic: {heuristic_name}")
 
-    def apply_heuristic(
-        self, solution: torch.Tensor, action: torch.Tensor
-    ) -> torch.Tensor:
+    def apply_heuristic(self, solution: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         """Applies the configured heuristic to the solution."""
         if self.heuristic is None:
             raise ValueError("Heuristic not configured. Call set_heuristic() first.")
         return self.heuristic(solution, action)
 
-    def set_params(self, params: Dict) -> None:
+    def set_params(self, params: dict) -> None:
         """
         Loads batch data (coords, demands, capacity) and pre-computes static features
         like distance matrices, angles, and isolation scores.
@@ -178,25 +176,34 @@ class CVRP(Problem):
             # so they can never appear as KNN neighbours. Real depot (index 0) is kept.
             real_counts = (self.demands > 0).sum(dim=1) + 1  # customers + depot [B]
             min_real = int(real_counts.min().item())
-            is_ghost = (self.demands == 0)
+            is_ghost = self.demands == 0
             is_ghost[:, 0] = False  # keep real depot
             masked_matrix = self.matrix.masked_fill(is_ghost.unsqueeze(1), float("inf"))
 
-            self.mean_dist_5  = calculate_knn_isolation(masked_matrix, k=5)
+            self.mean_dist_5 = calculate_knn_isolation(masked_matrix, k=5)
             self.mean_dist_10 = calculate_knn_isolation(masked_matrix, k=max(1, min_real // 10))
             self.mean_dist_33 = calculate_knn_isolation(masked_matrix, k=max(1, min_real // 3))
+
+            # Distance-rank matrix: rank_matrix[b, i, j] is the normalized rank of node j
+            # among node i's neighbors sorted by distance (self=0, closest real node=1/N).
+            # Ghosts (inf in masked_matrix) sort last; N excludes self.
+            ranks = masked_matrix.argsort(dim=-1).argsort(dim=-1)  # [B, N+1, N+1]
+            denom = (real_counts - 1).clamp(min=1).view(-1, 1, 1)
+            self.rank_matrix = (ranks.float() / denom).clamp(max=1.0)
 
             # Normalize distances from depot [0, 1]
             self.dist_to_depot = self.matrix[:, 0, 0:]
             min_dist = torch.min(self.dist_to_depot, dim=1, keepdim=True)[0]
             max_dist = torch.max(self.dist_to_depot, dim=1, keepdim=True)[0]
             divisor = torch.clamp(max_dist - min_dist, min=1e-10)
-            self.dist_to_depot = ((self.dist_to_depot - min_dist) / divisor).unsqueeze(
-                -1
-            )
+            self.dist_to_depot = ((self.dist_to_depot - min_dist) / divisor).unsqueeze(-1)
 
             self.depot_coords = self.coords[:, 0, :].unsqueeze(1)
             self.demand_normalized = (self.demands / self.capacity).unsqueeze(-1)
+
+            # Demand normalized by the largest demand in the instance (depot/ghosts -> 0)
+            max_demand = self.demands.max(dim=1, keepdim=True)[0].clamp(min=1e-10)
+            self.demand_max_normalized = (self.demands / max_demand).unsqueeze(-1)
 
     def generate_params(
         self, coords: torch.Tensor, demands: torch.Tensor, capacities: torch.Tensor
@@ -208,9 +215,7 @@ class CVRP(Problem):
             ("capacities", capacities),
         ]:
             if tensor.shape[0] != self.n_problems:
-                raise ValueError(
-                    f"Expected {self.n_problems} for {name}, got {tensor.shape[0]}"
-                )
+                raise ValueError(f"Expected {self.n_problems} for {name}, got {tensor.shape[0]}")
 
         self.set_params({"coords": coords, "demands": demands, "capacity": capacities})
 
@@ -218,7 +223,7 @@ class CVRP(Problem):
     # Feature Engineering & State Construction
     # ------------------------------------------------------------------------
 
-    def set_feature_flags(self, feature_flags: Dict[str, bool]) -> None:
+    def set_feature_flags(self, feature_flags: dict[str, bool]) -> None:
         self.feature_flags = feature_flags
 
     def get_input_dim(self) -> int:
@@ -226,6 +231,8 @@ class CVRP(Problem):
         dims = {
             "static": 6,  # x, y, th, d, is_depot, q/Q
             "topology": 4,  # prev_x, prev_y, next_x, next_y
+            "neighbor_rank": 2,  # distance-rank of prev/next neighbors
+            "demand_max": 1,  # demand / largest demand in instance
             "density5": 1,  # mean_dist_5
             "density10%": 1,  # mean_dist_10%
             "density33%": 1,  # mean_dist_33%
@@ -260,9 +267,7 @@ class CVRP(Problem):
         # Aggregate coordinates and counts per route
         route_coord_sums.scatter_add_(1, segment_ids_expanded, coords)
 
-        ones = torch.ones(
-            batch_size, seq_len, 1, device=self.device, dtype=coords.dtype
-        )
+        ones = torch.ones(batch_size, seq_len, 1, device=self.device, dtype=coords.dtype)
         # Count only valid nodes (using segment_ids to group)
         route_node_counts.scatter_add_(1, self.segment_ids.unsqueeze(-1), ones)
 
@@ -277,7 +282,7 @@ class CVRP(Problem):
 
     def build_state_components(
         self, x: torch.Tensor, temp: torch.Tensor, time: torch.Tensor
-    ) -> List[torch.Tensor]:
+    ) -> list[torch.Tensor]:
         """Assembles the state vector from static, topological, and dynamic features."""
         flags = self.feature_flags
         components = [x]
@@ -304,6 +309,14 @@ class CVRP(Problem):
         if flags.get("topology", True):
             components.append(torch.roll(padded_coords, shifts=1, dims=1))  # Prev
             components.append(torch.roll(padded_coords, shifts=-1, dims=1))  # Next
+
+        # 2b. Neighbor distance-rank (rank of prev/next neighbor from current node)
+        if flags.get("neighbor_rank", False):
+            components.append(calculate_neighbor_rank_features(x, self.rank_matrix))
+
+        # 2c. Demand normalized by largest demand in the instance
+        if flags.get("demand_max", False):
+            components.append(self.demand_max_normalized.gather(1, x))
 
         # 3. Density Features
         if flags.get("density5", False):
@@ -349,9 +362,7 @@ class CVRP(Problem):
 
     def get_coords(self, solution: torch.Tensor) -> torch.Tensor:
         """Retrieves coordinates for nodes in the solution sequence."""
-        return torch.gather(
-            self.coords, 1, solution.expand(-1, -1, self.coords.size(-1))
-        )
+        return torch.gather(self.coords, 1, solution.expand(-1, -1, self.coords.size(-1)))
 
     def get_demands(self, solution: torch.Tensor) -> torch.Tensor:
         """Retrieves demands for nodes in the solution sequence."""
@@ -361,7 +372,7 @@ class CVRP(Problem):
         self,
         init_heuristic: str = "",
         multi_init: bool = False,
-        init_list: List[str] = [],
+        init_list: list[str] = [],
     ) -> torch.Tensor:
         """Generates the initial population of solutions."""
         if multi_init:
@@ -372,16 +383,12 @@ class CVRP(Problem):
             for i, method in enumerate(init_list):
                 raw_sol = INIT_METHODS[method](self).to(self.device)
                 start_idx = i * split_size
-                end_idx = (
-                    (i + 1) * split_size if i < len(init_list) - 1 else self.n_problems
-                )
+                end_idx = (i + 1) * split_size if i < len(init_list) - 1 else self.n_problems
                 solutions.append(raw_sol[start_idx:end_idx])
 
             # Pad to match largest solution
             max_size = max(s.shape[1] for s in solutions)
-            solutions_padded = [
-                F.pad(s, (0, 0, 0, max_size - s.shape[1])) for s in solutions
-            ]
+            solutions_padded = [F.pad(s, (0, 0, 0, max_size - s.shape[1])) for s in solutions]
             sol = torch.cat(solutions_padded, dim=0)
         else:
             if init_heuristic not in INIT_METHODS:
@@ -444,7 +451,7 @@ class CVRP(Problem):
         next_coords = torch.cat([coords[:, 1:, :], coords[:, :1, :]], dim=1)
         return (coords - next_coords).norm(p=2, dim=-1)
 
-    def get_percentage_demands(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_percentage_demands(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Calculates demand ratios for state representation."""
         node_demands = self.ordered_demands
 
@@ -486,7 +493,7 @@ class CVRP(Problem):
 
     def update(
         self, solution: torch.Tensor, action: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Modifies the solution using the selected heuristic.
         Handles 'rm_depot' experimental mode vs standard mode.
@@ -517,9 +524,7 @@ class CVRP(Problem):
             sol = self.apply_heuristic(solution, action).long()
 
         # Feasibility Check
-        valid = torch.ones(sol.size(0), device=self.device, dtype=torch.bool).unsqueeze(
-            -1
-        )
+        valid = torch.ones(sol.size(0), device=self.device, dtype=torch.bool).unsqueeze(-1)
         if self.params.get("UPDATE_METHOD") == "free":
             new_demands = self.get_demands(sol)
             valid = is_feasible(sol, new_demands, self.capacity).unsqueeze(-1).long()
@@ -532,7 +537,7 @@ class CVRP(Problem):
 
         return final_sol, valid
 
-    def _get_prefix_loads(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _get_prefix_loads(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Computes load accumulated from the start of the route up to each node (head_load)
         and load remaining from the node to the end of the route (tail_load).
@@ -574,9 +579,7 @@ class CVRP(Problem):
 
         return head_load, tail_load
 
-    def get_action_mask(
-        self, solution: torch.Tensor, node_pos: torch.Tensor
-    ) -> torch.Tensor:
+    def get_action_mask(self, solution: torch.Tensor, node_pos: torch.Tensor) -> torch.Tensor:
         """
         Determines valid insertion moves based on the current state.
         State tensors (segment_ids, ordered_demands) must be up-to-date via update_tensor().
@@ -634,9 +637,7 @@ class CVRP(Problem):
             )
 
             # A. Standard Swap: (Same Route OR Fits Capacity) AND (Target is Customer)
-            standard_swap_mask = (is_intra | is_capacity_valid) & (
-                self.ordered_demands > 0
-            )
+            standard_swap_mask = (is_intra | is_capacity_valid) & (self.ordered_demands > 0)
 
             # B. New Route Creation (Triad Pattern [0, 0, 0])
             # Check neighbors for [Depot, Depot, Depot] pattern
@@ -669,9 +670,7 @@ class CVRP(Problem):
             new_load_a = source_head + tail_loads
             new_load_b = head_loads + source_tail
 
-            is_capacity_valid = (new_load_a <= self.capacity) & (
-                new_load_b <= self.capacity
-            )
+            is_capacity_valid = (new_load_a <= self.capacity) & (new_load_b <= self.capacity)
 
             # Target can be Customer OR Depot (grafting onto a depot is valid)
             is_inter = (~is_intra) & is_capacity_valid
@@ -706,9 +705,7 @@ class CVRP(Problem):
 
         return torch.where(force_no_op, no_op_mask, mask)
 
-    def apply_two_opt_split(
-        self, solution: torch.Tensor, action: torch.Tensor
-    ) -> torch.Tensor:
+    def apply_two_opt_split(self, solution: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         """
         Dispatches to standard 2-opt (intra) or 2-opt-star (inter).
         """
@@ -723,7 +720,7 @@ class CVRP(Problem):
         # in a single tensor op without masking, we calculate both and blend.
         # (Or execute purely based on indices if one function handled both,
         # but the logic differs).
-        
+
         if self.params.get("UPDATE_METHOD") == "rm_depot":
             # In this mode, we have already removed depots and are working on compacted TSP sequences.
             # The action indices correspond to the compacted sequences, so we can directly apply 2-opt logic.

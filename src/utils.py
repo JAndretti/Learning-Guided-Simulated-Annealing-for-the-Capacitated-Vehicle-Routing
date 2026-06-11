@@ -390,6 +390,39 @@ def calculate_detour_features(
     return detour_values.unsqueeze(-1)
 
 
+def calculate_neighbor_rank_features(
+    solution: torch.Tensor,
+    rank_matrix: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Looks up the distance-rank of each node's route-adjacent neighbors.
+
+    For every position, returns the rank (as seen from the current node) of its route
+    predecessor and successor. A low rank means the route uses one of the node's nearest
+    neighbors (a near-optimal edge); a high rank flags a long edge.
+
+    Args:
+        solution: [B, L, 1] node indices (LongTensor)
+        rank_matrix: [B, N+1, N+1] normalized distance ranks (see CVRP.set_params)
+
+    Returns:
+        [B, L, 2] containing (rank_prev, rank_next) for each position.
+    """
+    sol = solution.squeeze(-1).long()
+    B, L = sol.shape
+
+    prev_sol = torch.roll(sol, shifts=1, dims=1)
+    next_sol = torch.roll(sol, shifts=-1, dims=1)
+
+    batch_idx = torch.arange(B, device=rank_matrix.device).unsqueeze(1).expand(B, L)
+
+    # rank of the neighbor among the *current* node's sorted-by-distance candidates
+    rank_prev = rank_matrix[batch_idx, sol, prev_sol]
+    rank_next = rank_matrix[batch_idx, sol, next_sol]
+
+    return torch.stack([rank_prev, rank_next], dim=-1)
+
+
 def is_feasible(
     solution: torch.Tensor, demands: torch.Tensor, capacity: torch.Tensor
 ) -> torch.Tensor:
