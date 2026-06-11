@@ -5,7 +5,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 version = "0.1.0"
 
-# 1. Base dependencies ONLY (No PyTorch stack)
+# Base deps only — no torch stack here.
 dependencies = [
   "glob2>=0.7",
   "ipykernel>=6.29.5",
@@ -22,17 +22,56 @@ dependencies = [
   "py7zr>=1.0.0",
 ]
 
-# 2. Dependency Group for local machine installs
+# One extra per backend. Pick exactly one at sync time.
+[project.optional-dependencies]
+cpu = ["torch==2.9.1", "tensordict>=0.6"]
+cu126 = ["torch==2.9.1", "tensordict>=0.6"]
+cu130 = ["torch==2.9.1", "tensordict>=0.6"]
+
+# Dev tooling — `dev` is synced by default, no flag needed.
 [dependency-groups]
-local-gpu = [
-  "tensordict>=0.6",
-  "torch==2.9.1",
-  "torchvision==0.24.1",
-  "torchaudio==2.9.1",
+dev = ["ruff", "ty"]
+
+[tool.uv]
+# The three backends are mutually exclusive; uv forks the resolution per extra.
+conflicts = [[{extra = "cpu"}, {extra = "cu126"}, {extra = "cu130"}]]
+
+[tool.uv.sources]
+torch = [
+  {index = "pytorch-cpu", extra = "cpu"},
+  {index = "pytorch-cu126", extra = "cu126"},
+  {index = "pytorch-cu130", extra = "cu130"},
 ]
 
-# 3. Proper `uv` nesting for the PyTorch index
 [[tool.uv.index]]
 explicit = true
-name = "pytorch"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+
+[[tool.uv.index]]
+explicit = true
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+
+[[tool.uv.index]]
+explicit = true
+name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+extend-select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY", "PERF", "RUF"]
+ignore = ["E501"] # line length handled by the formatter
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["E402", "F401"] # late imports / unused common in notebooks
+"__init__.py" = ["F401"] # re-exports
+
+[tool.ty.environment]
+python-version = "3.12" # optional — ty infers this from requires-python
+
+[tool.ty.rules]
+# ty is strict by default; relax progressively as you adopt it.

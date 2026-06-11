@@ -2,7 +2,7 @@
 
 # Define the source and the base local destination
 REMOTE_PATH="JeanZay:/lustre/fswork/projects/rech/aik/uwa53wm/Learning-Guided-Simulated-Annealing-for-the-Capacitated-Vehicle-Routing/wandb/LG-SA/"
-LOCAL_BASE="/home/jules/Documents/LGSA-CVRP/wandb/LG-SA"
+LOCAL_BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/wandb/LG-SA"
 
 # Ensure the base directory exists locally
 mkdir -p "$LOCAL_BASE"
