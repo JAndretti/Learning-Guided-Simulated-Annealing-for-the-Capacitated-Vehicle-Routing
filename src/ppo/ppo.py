@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 from torch import nn
 from torch.optim import Optimizer
@@ -11,15 +9,6 @@ from utils import setup_device, setup_logging
 from .replay import ReplayBuffer
 
 logger = setup_logging()
-
-DEVICE = setup_device(
-    "cuda"
-    if torch.cuda.is_available()
-    else "mps"
-    if torch.backends.mps.is_available()
-    else "cpu"
-)
-logger.info(f"PPO epochs will use device: {DEVICE}")
 
 
 def gradient_penalty(critic, states):
@@ -142,9 +131,7 @@ def run_ppo_training_epochs(
 
             # --- Current evaluation of actor and critic ---
             batch_state_values = critic(batch_state).squeeze()
-            batch_log_probs, batch_entropy = actor.evaluate(
-                batch_state, batch_action, batch_mask
-            )
+            batch_log_probs, batch_entropy = actor.evaluate(batch_state, batch_action, batch_mask)
 
             # Gradients must be zeroed for each mini-batch
             actor_opt.zero_grad()
@@ -168,10 +155,7 @@ def run_ppo_training_epochs(
             # === Actor Loss Calculation ===
             ratios = torch.exp(batch_log_probs - batch_old_log_probs.detach())
             surr1 = ratios * batch_advantages.detach()
-            surr2 = (
-                torch.clamp(ratios, 1 - eps_clip, 1 + eps_clip)
-                * batch_advantages.detach()
-            )
+            surr2 = torch.clamp(ratios, 1 - eps_clip, 1 + eps_clip) * batch_advantages.detach()
 
             # Clipped PPO loss
             actor_loss = -torch.min(surr1, surr2).mean()
@@ -212,9 +196,7 @@ def run_ppo_training_epochs(
             y_true = batch_returns.detach().flatten()
 
             var_y = torch.var(y_true)
-            explained_var_epoch += (
-                1 - torch.var(y_true - y_pred) / (var_y + 1e-8)
-            ).item()
+            explained_var_epoch += (1 - torch.var(y_true - y_pred) / (var_y + 1e-8)).item()
             num_batches += 1
 
         # --- Metrics tracking ---
@@ -261,6 +243,7 @@ def run_ppo_training_epochs(
         sum(average_kl) / len(average_kl),
     )
 
+
 def ppo(
     actor: SAModel,
     critic: nn.Module,
@@ -270,7 +253,7 @@ def ppo(
     critic_opt: Optimizer,
     curr_epoch: int,
     cfg: dict,
-) -> Tuple[float, float, float, float, float, float]:
+) -> tuple[float, float, float, float, float, float]:
     """
     Proximal Policy Optimization (PPO) implementation for CVRP.
 
@@ -291,15 +274,13 @@ def ppo(
     """
 
     # === Hyperparameters ===
-    trace_decay = cfg[
-        "TRACE_DECAY"
-    ]  # λ (lambda) for GAE - controls bias-variance tradeoff
+    trace_decay = cfg["TRACE_DECAY"]  # λ (lambda) for GAE - controls bias-variance tradeoff
     n_problems = cfg["N_PROBLEMS"]  # Number of parallel problem instances
     problem_dim = pb_dim
     gamma = cfg["GAMMA"]  # Discount factor for future rewards
     beta_kl = cfg["BETA_KL"]  # Initial KL penalty coefficient
     end_device = cfg["DEVICE"]  # Computation device (CPU/GPU)
-    device = DEVICE
+    device = setup_device(cfg["DEVICE"])
 
     # Set networks to training mode
     actor.to(device)
@@ -316,11 +297,7 @@ def ppo(
 
         # done==True on the terminal step; expand to [nt, n_problems]
         dones = (
-            all_td["done"].to(device)
-            .float()
-            .unsqueeze(-1)
-            .expand(nt, n_problems)
-            .contiguous()
+            all_td["done"].to(device).float().unsqueeze(-1).expand(nt, n_problems).contiguous()
         )  # [nt, n_problems]
 
         state = all_td["state"].reshape(nt, n_problems, problem_dim, -1).to(device)
@@ -351,9 +328,7 @@ def ppo(
         # Compute GAE in a single reversed loop (vectorized over problems)
         # A_t = δ_t + γ * λ * A_{t+1}
         for t in reversed(range(nt)):
-            last_advantage = deltas[t] + gamma * trace_decay * last_advantage * (
-                1.0 - dones[t]
-            )
+            last_advantage = deltas[t] + gamma * trace_decay * last_advantage * (1.0 - dones[t])
             advantages[t] = last_advantage
 
         # Compute "returns" (target for value function)

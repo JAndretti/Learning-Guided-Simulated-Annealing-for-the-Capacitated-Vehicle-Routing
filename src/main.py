@@ -18,7 +18,7 @@ Key Components:
 import math
 import time
 import warnings
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 # Third-Party Libraries
 import numpy as np
@@ -62,7 +62,7 @@ if config["LOG"]:
 
 
 def log_training_and_test_metrics(
-    actor_loss: Optional[float],
+    actor_loss: float | None,
     critic_loss: float,
     steps: int,
     avg_actor_grad: float,
@@ -76,10 +76,10 @@ def log_training_and_test_metrics(
     pre_step: int,
     early_stopping_counter: int,
     a_min_cost: float,
-    test_results_td: Optional[Any],
-    test_results_extra: Optional[Dict],
+    test_results_td: Any | None,
+    test_results_extra: dict | None,
     epoch: int,
-    config: Dict[str, Any],
+    config: dict[str, Any],
     log_test: bool = False,
 ) -> None:
     """Logs training and testing metrics to WandB."""
@@ -112,9 +112,7 @@ def log_training_and_test_metrics(
             {
                 "Min_cost": torch.mean(test_results_td["min_cost"]),
                 "A_min_cost": a_min_cost,
-                "Gain": torch.mean(
-                    test_results_td["init_cost"] - test_results_td["min_cost"]
-                ),
+                "Gain": torch.mean(test_results_td["init_cost"] - test_results_td["min_cost"]),
                 "Test_Rewards_mean": test_results_extra["average_sum_rewards"].item(),
                 "Acceptance_rate": torch.mean(test_results_td["n_acc"])
                 / config["TEST_OUTER_STEPS"],
@@ -128,7 +126,7 @@ def log_training_and_test_metrics(
     WandbLogger.log(logs)
 
 
-def save_model(path: str, actor_model: Optional[torch.nn.Module] = None) -> None:
+def save_model(path: str, actor_model: torch.nn.Module | None = None) -> None:
     """Saves the actor model state dictionary."""
     if actor_model is None:
         raise ValueError("No model provided for saving")
@@ -138,7 +136,7 @@ def save_model(path: str, actor_model: Optional[torch.nn.Module] = None) -> None
         logger.info(f"Model saved to: {path}")
 
 
-def calculate_curriculum_steps_sig(step: int, config: Dict[str, Any]) -> int:
+def calculate_curriculum_steps_sig(step: int, config: dict[str, Any]) -> int:
     """
     Calculates the number of deterministic improvement steps (T_init)
     based on a Sigmoid schedule.
@@ -168,7 +166,7 @@ def calculate_curriculum_steps_sig(step: int, config: Dict[str, Any]) -> int:
     return max(0, min(t_init, xi_cl))
 
 
-def calculate_curriculum_steps_lin(step: int, config: Dict[str, Any]) -> int:
+def calculate_curriculum_steps_lin(step: int, config: dict[str, Any]) -> int:
     xi_cl = config["MAX_OUTER_STEPS_CL"]
     E = config["MAX_PROB_STEP"]
 
@@ -180,7 +178,7 @@ def calculate_curriculum_steps_lin(step: int, config: Dict[str, Any]) -> int:
 
 
 def initialize_training_problem(
-    problem: CVRP, device: str, config: Dict[str, Any], epoch: int
+    problem: CVRP, device: str, config: dict[str, Any], epoch: int
 ) -> CVRP:
     """Regenerates the problem instance for the next training epoch."""
     if config["DATA"] == "uchoa":
@@ -194,16 +192,12 @@ def initialize_training_problem(
 
     elif config["DATA"] == "random":
         # Generate fully random instances
-        coords = torch.rand(
-            config["N_PROBLEMS"], config["PROBLEM_DIM"] + 1, 2, device=device
-        )
+        coords = torch.rand(config["N_PROBLEMS"], config["PROBLEM_DIM"] + 1, 2, device=device)
         demands = torch.randint(
             1, 10, (config["N_PROBLEMS"], config["PROBLEM_DIM"] + 1), device=device
         )
         demands[:, 0] = 0  # Depot has no demand
-        capacity = torch.full(
-            (config["N_PROBLEMS"], 1), config["MAX_LOAD"], device=device
-        )
+        capacity = torch.full((config["N_PROBLEMS"], 1), config["MAX_LOAD"], device=device)
         problem.generate_params(coords, demands, capacity)
 
     return problem
@@ -221,9 +215,9 @@ def train_ppo(
     critic_optimizer: torch.optim.Optimizer,
     critic_scheduler: ExponentialLR,
     problem: CVRP,
-    config: Dict[str, Any],
+    config: dict[str, Any],
     step: int = 0,
-) -> Tuple[Dict, Tuple, float, float, int]:
+) -> tuple[dict, tuple, float, float, int]:
     """
     Executes a single training epoch (SA collection + PPO update).
     """
@@ -343,9 +337,7 @@ def train_ppo(
     critic_scheduler.step()
 
     def get_avg_grad(model):
-        grads = [
-            p.grad.abs().mean().item() for p in model.parameters() if p.grad is not None
-        ]
+        grads = [p.grad.abs().mean().item() for p in model.parameters() if p.grad is not None]
         return float(np.mean(grads)) if grads else 0.0
 
     avg_actor_grad = get_avg_grad(actor)
@@ -372,13 +364,15 @@ def _log_benchmark_epoch(
 ) -> None:
     import csv
     import os
+
     write_header = not os.path.exists(path)
     with open(path, "a", newline="") as f:
         w = csv.writer(f)
         if write_header:
             w.writerow(["epoch", "time_s", "actor_loss", "critic_loss", "test_loss"])
-        w.writerow([epoch, f"{elapsed:.3f}", f"{actor_loss:.6f}",
-                    f"{critic_loss:.6f}", f"{test_loss:.6f}"])
+        w.writerow(
+            [epoch, f"{elapsed:.3f}", f"{actor_loss:.6f}", f"{critic_loss:.6f}", f"{test_loss:.6f}"]
+        )
 
 
 # ============================================================================
@@ -466,9 +460,7 @@ def main(config: dict) -> None:
     for epoch in progress_bar:
         _epoch_start = time.time()
         # A. Prepare Data
-        training_problem = initialize_training_problem(
-            training_problem, device, config, epoch
-        )
+        training_problem = initialize_training_problem(training_problem, device, config, epoch)
 
         # B. Run Training Step
         sa_td, sa_extra, train_stats, avg_actor_grad, avg_critic_grad, pre_step = train_ppo(
@@ -482,9 +474,7 @@ def main(config: dict) -> None:
             step=epoch + 1,
         )
         # C. Extract Stats
-        actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = (
-            train_stats
-        )
+        actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = train_stats
         config["BETA_KL"] = beta_kl
 
         # D. Periodic Evaluation
@@ -522,8 +512,12 @@ def main(config: dict) -> None:
                 pre_step=pre_step,
                 early_stopping_counter=early_stopping_counter,
                 a_min_cost=a_min_cost,
-                test_results_td=test_results_td if (epoch >= save_period) else initial_test_results_td,
-                test_results_extra=test_results_extra if (epoch >= save_period) else initial_test_results_extra,
+                test_results_td=test_results_td
+                if (epoch >= save_period)
+                else initial_test_results_td,
+                test_results_extra=test_results_extra
+                if (epoch >= save_period)
+                else initial_test_results_extra,
                 epoch=epoch,
                 config=config,
                 log_test=(epoch % save_period == 0 and epoch != 0),
@@ -552,9 +546,7 @@ def main(config: dict) -> None:
         # epochs. Defaults to MAX_PROB_STEP, but can be set independently so the
         # schedule shape (MAX_PROB_STEP) and the early-stop gate are decoupled.
         early_stop_after = config["EARLY_STOP_AFTER"] or config["MAX_PROB_STEP"]
-        if early_stopping_counter > 10 and (
-            not config["CL"] or epoch >= early_stop_after
-        ):
+        if early_stopping_counter > 10 and (not config["CL"] or epoch >= early_stop_after):
             logger.warning(f"Early stopping triggered at epoch {epoch}")
             break
 
