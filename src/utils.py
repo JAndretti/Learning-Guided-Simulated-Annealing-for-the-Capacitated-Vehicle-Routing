@@ -51,7 +51,7 @@ def setup_device(device: str) -> str:
 
     # Apple Metal Performance Shaders (MPS) configuration
     else:
-        if torch.backends.mps.is_available():
+        if torch.backends.mps.is_available() and device == "mps":
             device = "mps"
         else:
             device = "cpu"
@@ -196,9 +196,7 @@ def plot_vehicle_routes(
 
     # route is one sequence, separating different routes with 0 (depot)
     routes = [
-        r[r != 0]
-        for r in np.split(route.cpu().numpy(), np.where(route == 0)[0])
-        if (r != 0).any()
+        r[r != 0] for r in np.split(route.cpu().numpy(), np.where(route == 0)[0]) if (r != 0).any()
     ]
     depot = data["depot"].cpu().numpy()
     locs = data["loc"].cpu().numpy()
@@ -236,13 +234,9 @@ def plot_vehicle_routes(
             dist += np.sqrt((x - x_prev) ** 2 + (y - y_prev) ** 2)
 
             cap_rects.append(Rectangle((x, y), 0.01, 0.1))
-            used_rects.append(
-                Rectangle((x, y), 0.01, 0.1 * total_route_demand / capacity)
-            )
+            used_rects.append(Rectangle((x, y), 0.01, 0.1 * total_route_demand / capacity))
             dem_rects.append(
-                Rectangle(
-                    (x, y + 0.1 * cum_demand / capacity), 0.01, 0.1 * d / capacity
-                )
+                Rectangle((x, y + 0.1 * cum_demand / capacity), 0.01, 0.1 * d / capacity)
             )
 
             x_prev, y_prev = x, y
@@ -259,29 +253,17 @@ def plot_vehicle_routes(
             angles="xy",
             scale=1,
             color=color,
-            label="R{}, # {}, c {} / {}, d {:.2f}".format(
-                veh_number,
-                len(r),
-                int(total_route_demand) if round_demand else total_route_demand,
-                int(capacity) if round_demand else capacity,
-                dist,
-            ),
+            label=f"R{veh_number}, # {len(r)}, c {int(total_route_demand) if round_demand else total_route_demand} / {int(capacity) if round_demand else capacity}, d {dist:.2f}",
         )
 
         qvs.append(qv)
-    title = (
-        f"{title or ''} {len(routes)} routes, total distance {total_dist:.4f}".strip()
-    )
+    title = f"{title or ''} {len(routes)} routes, total distance {total_dist:.4f}".strip()
 
     ax1.set_title(title)
     ax1.legend(handles=qvs)
 
-    pc_cap = PatchCollection(
-        cap_rects, facecolor="whitesmoke", alpha=1.0, edgecolor="lightgray"
-    )
-    pc_used = PatchCollection(
-        used_rects, facecolor="lightgray", alpha=1.0, edgecolor="lightgray"
-    )
+    pc_cap = PatchCollection(cap_rects, facecolor="whitesmoke", alpha=1.0, edgecolor="lightgray")
+    pc_used = PatchCollection(used_rects, facecolor="lightgray", alpha=1.0, edgecolor="lightgray")
     pc_dem = PatchCollection(dem_rects, facecolor="black", alpha=1.0, edgecolor="black")
 
     if visualize_demands:
@@ -300,9 +282,7 @@ def calculate_client_angles(coords: torch.Tensor) -> torch.Tensor:
     delta = clients - depot
     ang = torch.atan2(delta[..., 1], delta[..., 0])  # [-π,π]
     norm = ang.div(2 * torch.pi).add(0.5)  # [0,1]
-    all_ang = torch.cat(
-        [torch.zeros(coords.size(0), 1, device=coords.device), norm], dim=1
-    )
+    all_ang = torch.cat([torch.zeros(coords.size(0), 1, device=coords.device), norm], dim=1)
     return all_ang.unsqueeze(-1)
 
 
@@ -441,9 +421,7 @@ def is_feasible(
     device = solution.device
 
     mask = solution.squeeze(-1) != 0  # [batch, route_length]
-    segment_start = mask & ~torch.cat(
-        [torch.zeros_like(mask[:, :1]), mask[:, :-1]], dim=1
-    )
+    segment_start = mask & ~torch.cat([torch.zeros_like(mask[:, :1]), mask[:, :-1]], dim=1)
     segment_ids = torch.cumsum(segment_start, 1) * mask
     num_routes = segment_ids.max() + 1
 
@@ -501,9 +479,7 @@ def is_feasible2(
     # Compute route demand sums (scatter_add)
     max_routes = route_ids.max().item() + 1 if route_ids.numel() > 0 else 0
     max_routes = max(max_routes, solution.size(1))  # ensure enough space
-    route_demands = torch.zeros(
-        batch_size, int(max_routes), dtype=torch.int64, device=device
-    )
+    route_demands = torch.zeros(batch_size, int(max_routes), dtype=torch.int64, device=device)
 
     route_demands.scatter_add_(1, torch.clamp(route_ids, min=0), demands * mask)
 
@@ -562,13 +538,9 @@ def capacity_utilization(
     # Compute total demand per route
     max_routes = route_ids.max().item() + 1 if route_ids.numel() > 0 else 0
     max_routes = max(max_routes, 1)  # ensure at least one route
-    route_demands = torch.zeros(
-        batch_size, int(max_routes), dtype=torch.float, device=device
-    )
+    route_demands = torch.zeros(batch_size, int(max_routes), dtype=torch.float, device=device)
 
-    route_demands.scatter_add_(
-        1, torch.clamp(route_ids, min=0), demands.float() * mask.float()
-    )
+    route_demands.scatter_add_(1, torch.clamp(route_ids, min=0), demands.float() * mask.float())
 
     # Calculate utilization ratio for each route (demand / capacity)
     route_utilization = route_demands / capacity
@@ -587,9 +559,7 @@ def find_indices(x, c1, c2):
     Vectorized version for better efficiency.
     """
     # Ensure dimensions are compatible
-    assert x.shape[0] == c1.shape[0] == c2.shape[0], (
-        "The first dimension must be the same"
-    )
+    assert x.shape[0] == c1.shape[0] == c2.shape[0], "The first dimension must be the same"
 
     # Reshape tensors
     x_flat = x.squeeze(-1).long()  # [batch, pb_size]

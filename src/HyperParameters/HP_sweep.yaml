@@ -316,166 +316,212 @@
 
 # --- V2: feature ablation (Tables loo_ablation + isolation_ablation) ---------
 #   Fixed so far (in HP.yaml): HEURISTIC, UPDATE_METHOD (from V1).
+#   The full node-feature set is now 13 groups, INCLUDING the two added static
+#   features neighbor_rank (distance-rank of the route prev/next neighbours, 2 dims)
+#   and demand_max (demand / largest demand). Every `features` dict below lists all
+#   13 keys explicitly so the all-on / LOO / isolation arms stay mutually consistent.
 #   One folder PER arm (the `features` dict cannot be a disaggregating column).
 #   -> bake the winning feature set into HP.yaml `features`.
 #   EVAL (per folder): uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
 #
-#   -- baseline: ALL features on (incl. route_pct / L_r) --
+#   -- baseline: ALL 13 feature groups on --
 # - GROUP: [V2_feat_all]
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
 #   -- leave-one-out (remove one group from the all-on baseline) --
 # - GROUP: [V2_loo_no_static]
-#   features: [{static: false, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   features: [{static: false, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
 # - GROUP: [V2_loo_no_topology]
-#   features: [{static: true, topology: false, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   features: [{static: true, topology: false, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_loo_no_detour]
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: false, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+# - GROUP: [V2_loo_no_neighbor_rank]
+#   features: [{static: true, topology: true, neighbor_rank: false, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_loo_no_meta]
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: false}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_loo_no_slack]
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: false, node_pct: true, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_loo_no_centroid]
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: false, route_pct: true, slack: true, node_pct: true, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_loo_no_density33]
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: false, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_loo_no_density10]
-#   features: [{static: true, topology: true, density5: true, density10%: false, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+# - GROUP: [V2_loo_no_demand_max]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: false, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
 # - GROUP: [V2_loo_no_density5]
-#   features: [{static: true, topology: true, density5: false, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: false, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_density10]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: false, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_density33]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: false, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_detour]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: false, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_centroid]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: false, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_route_pct]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_loo_no_slack]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: false, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
 # - GROUP: [V2_loo_no_node_pct]
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: false, meta: true}]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_feat_no_route_pct]      # current HP.yaml default (pruned L_r)
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+# - GROUP: [V2_loo_no_meta]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: false}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-#   -- thematic ablations --
-# - GROUP: [V2_thematic_no_geometry]   # remove detour + centroid
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: false, centroid: false, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   -- thematic ablations (remove a whole theme) --
+# - GROUP: [V2_thematic_no_geometry] # remove detour + centroid
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: false, centroid: false, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_thematic_no_capacity]   # remove route_pct + slack + node_pct
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: false, node_pct: false, meta: true}]
+# - GROUP: [V2_thematic_no_capacity] # remove route_pct + slack + node_pct
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_thematic_no_density]    # remove density5 + density10% + density33%
-#   features: [{static: true, topology: true, density5: false, density10%: false, density33%: false, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+# - GROUP: [V2_thematic_no_density] # remove density5/10%/33%
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: false, density10%: false, density33%: false, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_thematic_no_relational] # remove topology + neighbor_rank
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
 #   -- isolation: base (static+meta only) + ONE feature --
 # - GROUP: [V2_iso_base]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_detour]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: true, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
 # - GROUP: [V2_iso_topology]
-#   features: [{static: true, topology: true, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   features: [{static: true, topology: true, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_centroid]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: true, route_pct: false, slack: false, node_pct: false, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_density10]
-#   features: [{static: true, topology: false, density5: false, density10%: true, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_density33]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: true, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_density5]
-#   features: [{static: true, topology: false, density5: true, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_route_pct]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: true, slack: false, node_pct: false, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_slack]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: true, node_pct: false, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V2_iso_node_pct]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: true, meta: true}]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-#   -- NEW FEATURES: neighbor_rank (distance-rank of route prev/next) + demand_max
-#      (demand / largest demand). Both default off; the existing V2 dicts above omit
-#      them (-> off), so the all-on/LOO baselines keep their original meaning.
-#      isolation: base (static+meta) + the one new feature; add-on: current HP.yaml
-#      default feature set + the new feature(s) -> "does it help on top of the best set".
 # - GROUP: [V2_iso_neighbor_rank]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, neighbor_rank: true, demand_max: false, meta: true}]
+#   features: [{static: true, topology: false, neighbor_rank: true, demand_max: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
 # - GROUP: [V2_iso_demand_max]
-#   features: [{static: true, topology: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, neighbor_rank: false, demand_max: true, meta: true}]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: true, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_add_neighbor_rank]      # current HP.yaml default + neighbor_rank
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, neighbor_rank: true, demand_max: false, meta: true}]
+# - GROUP: [V2_iso_density5]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: true, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_add_demand_max]         # current HP.yaml default + demand_max
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, neighbor_rank: false, demand_max: true, meta: true}]
+# - GROUP: [V2_iso_density10]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: true, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
-# - GROUP: [V2_add_both]               # current HP.yaml default + both new features
-#   features: [{static: true, topology: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, neighbor_rank: true, demand_max: true, meta: true}]
+# - GROUP: [V2_iso_density33]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: true, detour: false, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_detour]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: false, detour: true, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_centroid]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: false, detour: false, centroid: true, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_route_pct]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: true, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_slack]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: true, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V2_iso_node_pct]
+#   features: [{static: true, topology: false, neighbor_rank: false, demand_max: false, density5: false, density10%: false, density33%: false, detour: false, centroid: false, route_pct: false, slack: false, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V2_best_set: CONSTRUCT + CONFIRM the best feature set (5 seeds) ----------
+#   The diagnostic groups above only MEASURE impact (LOO = marginal value with all
+#   else present; isolation = standalone value over V2_iso_base). This batch is the
+#   CONSTRUCTION step: read those results, build ONE candidate best set with the rule
+#   below, and confirm it seed-paired against the all-on reference.
+#   PRUNING RULE (build the candidate set):
+#     * keep static + meta (almost always essential);
+#     * DROP a feature if its LOO removal changes mean final_cost by < the Batch-0
+#       noise floor AND its isolation gain over V2_iso_base is < the noise floor;
+#     * for CORRELATED clusters (density5/10%/33%, topology/neighbor_rank, the
+#       capacity trio route_pct/slack/node_pct) use the thematic groups: if removing
+#       the whole cluster hurts but no single LOO does, keep the best ONE member
+#       (highest isolation / cheapest), not all of them.
+#   DECISION: pick the set with the lowest mean final_cost that is NOT significantly
+#   worse than all-on; on a tie, the SMALLER set wins. BAKE it into HP.yaml `features`
+#   before running V2b / V3 (later batches inherit it).
+#   EVAL (per folder): uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V2_best_set]            # <-- FILL: flip the PRUNED features to false
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2, 3, 4]
+# - GROUP: [V2_best_all]            # all-on reference, seed-paired at 5 seeds
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2, 3, 4]
+
+
+# --- V2b: conditional neighbor-rank for city-2 selection (COND_RANK) ---------
+#   SEPARATE batch, run AFTER V2_best_set is baked into HP.yaml: it adds the COND_RANK
+#   key, so its key set differs from the features-only groups (launcher rule -> on its
+#   own). No `features` line here on purpose -> it INHERITS the chosen best set from
+#   HP.yaml, so COND_RANK is tested on top of the constructed best feature set.
+#   COND_RANK conditions the SECOND-node policy on the bidirectional distance-rank
+#   (rank_ij, rank_ji) between each candidate and the chosen first node. It is a
+#   model-conditioning toggle, NOT a node feature; swept as a disaggregating column.
+#   NOTE: COND_RANK currently supports UPDATE_METHOD valid/free, NOT rm_depot
+#   (which compacts depot positions); keep UPDATE_METHOD=valid for this batch.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_rank --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V2_cond_rank]
+#   COND_RANK: [false, true]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]

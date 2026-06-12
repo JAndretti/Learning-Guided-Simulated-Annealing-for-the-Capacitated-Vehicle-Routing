@@ -352,6 +352,28 @@ class CVRP(Problem):
 
         return components
 
+    def conditional_neighbor_rank(self, x: torch.Tensor, c1: torch.Tensor) -> torch.Tensor:
+        """
+        Distance-rank of each candidate position relative to the chosen first node c1,
+        in both directions, for conditional second-node selection.
+
+        Args:
+            x: [B, L, 1] (or [B, L]) node-index sequence (state column 0 / solution).
+            c1: [B] chosen first-node *position* in the sequence (not a node id).
+
+        Returns:
+            [B, L, 2] = (rank_matrix[u, v], rank_matrix[v, u]) for every candidate
+            position, with u = node at position c1 and v = node at each position.
+            Values in [0, 1]. Assumes c1 indexes the same sequence as x (true for the
+            'valid'/'free' update methods; not 'rm_depot', which compacts positions).
+        """
+        nodes = x.squeeze(-1).long()  # [B, L] node id at each position
+        arange = torch.arange(nodes.size(0), device=nodes.device)
+        u = nodes[arange, c1]  # [B] node id at the chosen first position
+        rank_ij = self.rank_matrix[arange, u].gather(1, nodes)  # rank of v from u's view
+        rank_ji = self.rank_matrix[arange, :, u].gather(1, nodes)  # rank of u from v's view
+        return torch.stack([rank_ij, rank_ji], dim=-1)  # [B, L, 2]
+
     # ------------------------------------------------------------------------
     # Initialization & Helpers
     # ------------------------------------------------------------------------

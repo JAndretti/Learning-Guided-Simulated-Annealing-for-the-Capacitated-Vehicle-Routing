@@ -49,6 +49,7 @@ def run_ppo_training_epochs(
     beta_kl,
     cfg,
     curr_epoch,
+    cond_rank=None,
 ):
     """
     Dedicated function for the PPO training loop for clarity.
@@ -128,10 +129,13 @@ def run_ppo_training_epochs(
             batch_returns = returns[minibatch_indices]
             batch_old_log_probs = old_log_probs[minibatch_indices].squeeze()
             batch_old_values = old_state_values[minibatch_indices].squeeze()
+            batch_cond_rank = None if cond_rank is None else cond_rank[minibatch_indices]
 
             # --- Current evaluation of actor and critic ---
             batch_state_values = critic(batch_state).squeeze()
-            batch_log_probs, batch_entropy = actor.evaluate(batch_state, batch_action, batch_mask)
+            batch_log_probs, batch_entropy = actor.evaluate(
+                batch_state, batch_action, batch_mask, cond_rank=batch_cond_rank
+            )
 
             # Gradients must be zeroed for each mini-batch
             actor_opt.zero_grad()
@@ -305,6 +309,11 @@ def ppo(
         action = all_td["action"].reshape(nt, n_problems, -1).to(device)
         old_log_probs = all_td["old_log_probs"].reshape(nt, n_problems, -1).to(device)
 
+        # Conditional neighbor-rank for city 2 (present only when COND_RANK is enabled)
+        cond_rank = None
+        if "cond_rank" in all_td.keys():
+            cond_rank = all_td["cond_rank"].reshape(nt, n_problems, problem_dim, 2).to(device)
+
         # One critic pass over all states; next_state_values = state_values shifted by 1
         # (valid because next_state[t] == state[t+1]; terminal row is zeroed by dones)
         flat_state = state.view(nt * n_problems, problem_dim, -1)
@@ -345,6 +354,8 @@ def ppo(
     old_log_probs = old_log_probs.view(nt * n_problems, -1)
     advantages = advantages.view(nt * n_problems)
     returns = returns.view(nt * n_problems)
+    if cond_rank is not None:
+        cond_rank = cond_rank.view(nt * n_problems, problem_dim, 2)
 
     # Advantage normalization (common and recommended practice)
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -369,6 +380,7 @@ def ppo(
             beta_kl,
             cfg,
             curr_epoch,
+            cond_rank=cond_rank,
         )
     )
     actor.to(end_device)

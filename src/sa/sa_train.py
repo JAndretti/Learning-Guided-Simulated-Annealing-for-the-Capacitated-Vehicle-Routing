@@ -366,11 +366,11 @@ def sa_train(
 
         with torch.no_grad():
             if baseline:
-                action, action_log_prob, mask = actor.baseline_sample(
+                action, action_log_prob, mask, cond_rank = actor.baseline_sample(
                     current_state, problem=problem
                 )
             else:
-                action, action_log_prob, mask = actor.sample(
+                action, action_log_prob, mask, cond_rank = actor.sample(
                     current_state, greedy=greedy, problem=problem
                 )
         if "cuda" in device:
@@ -491,6 +491,7 @@ def sa_train(
                 action,
                 tracking["reward_signal"],
                 action_log_prob,
+                cond_rank=cond_rank,
             )
 
         # Move to next state

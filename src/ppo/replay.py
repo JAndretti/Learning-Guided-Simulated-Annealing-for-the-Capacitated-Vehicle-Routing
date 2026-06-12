@@ -21,21 +21,24 @@ class ReplayBuffer:
         reward: torch.Tensor,
         old_log_probs: torch.Tensor,
         done: bool = False,
+        cond_rank: torch.Tensor | None = None,
     ) -> None:
         assert len(self._memory) < self.capacity, (
             f"ReplayBuffer full ({self.capacity} steps) — increase capacity or clear before pushing"
         )
-        td = TensorDict(
-            {
-                "state": state.detach().clone().to(self.device),
-                "mask": mask.detach().clone().to(self.device),
-                "action": action.detach().clone().to(self.device),
-                "reward": reward.detach().clone().to(self.device),
-                "old_log_probs": old_log_probs.detach().clone().to(self.device),
-                "done": torch.tensor(done, dtype=torch.bool, device=self.device),
-            },
-            batch_size=[],
-        )
+        data = {
+            "state": state.detach().clone().to(self.device),
+            "mask": mask.detach().clone().to(self.device),
+            "action": action.detach().clone().to(self.device),
+            "reward": reward.detach().clone().to(self.device),
+            "old_log_probs": old_log_probs.detach().clone().to(self.device),
+            "done": torch.tensor(done, dtype=torch.bool, device=self.device),
+        }
+        # Only present when conditional-rank conditioning is enabled. The flag is constant
+        # within a run, so every stacked TensorDict shares the same key set.
+        if cond_rank is not None:
+            data["cond_rank"] = cond_rank.detach().clone().to(self.device)
+        td = TensorDict(data, batch_size=[])
         self._memory.append(td)
 
     def mark_terminal(self) -> None:

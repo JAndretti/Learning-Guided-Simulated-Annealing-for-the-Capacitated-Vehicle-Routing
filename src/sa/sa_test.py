@@ -257,11 +257,11 @@ def sa_test(
         # 1. Action
         with torch.no_grad():
             if baseline:
-                action, action_log_prob, mask = actor.baseline_sample(
+                action, action_log_prob, mask, _ = actor.baseline_sample(
                     current_state, problem=problem
                 )
             else:
-                action, action_log_prob, mask = actor.sample(
+                action, action_log_prob, mask, _ = actor.sample(
                     current_state, greedy=greedy, problem=problem
                 )
 

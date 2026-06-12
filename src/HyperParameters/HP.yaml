@@ -2,11 +2,11 @@
 PROJECT: "LG-SA" # Project name
 GROUP: "" # Experimentation group
 COMMENT: ""
-LOG: True # Enable or disable logging with WandB
+LOG: False # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
-DEVICE: "cuda" # Hardware used: cpu, cuda, or mps
+DEVICE: "cpu" # Hardware used: cpu, cuda, or mps
 SEED: 42 # Random seed for reproducibility
 
 # =============== CVRP Problem ===============
@@ -48,6 +48,7 @@ features:
 
 # =============== Model Architecture ===============
 MODEL: "seq" # Model type: seq, attention
+COND_RANK: False # Condition city-2 selection on the bidirectional distance-rank to city-1 (seq actor only)
 CRITIC_MODEL: "ff" # Critic model type: ff, attention
 EMBEDDING_DIM: 32 # Embedding dimension for MLP scorer hidden layers
 NUM_H_LAYERS: 1 # Number of hidden layers in MLP components
