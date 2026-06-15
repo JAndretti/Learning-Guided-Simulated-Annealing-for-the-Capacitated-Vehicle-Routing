@@ -306,12 +306,12 @@
 #   Fixed so far: nothing (first axis). Expect insertion + valid (Proactive).
 #   -> bake winner into HP.yaml: HEURISTIC, UPDATE_METHOD.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V1_heur_feas --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V1_heur_feas]
-  HEURISTIC: [insertion, swap, two_opt]
-  UPDATE_METHOD: [valid, free, rm_depot]   # valid=Proactive, free=Indirect, rm_depot=Reactive (CONFIRM)
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V1_heur_feas]
+#   HEURISTIC: [insertion, swap, two_opt]
+#   UPDATE_METHOD: [valid, free, rm_depot]   # valid=Proactive, free=Indirect, rm_depot=Reactive (CONFIRM)
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V2: feature ablation (Tables loo_ablation + isolation_ablation) ---------
