@@ -6,7 +6,7 @@ LOG: True # Enable or disable logging with WandB
 VERBOSE: False # Verbose output during training
 
 # =============== Hardware & Setup ===============
-DEVICE: "cpu" # Hardware used: cpu, cuda, or mps
+DEVICE: "cuda" # Hardware used: cpu, cuda, or mps
 SEED: 42 # Random seed for reproducibility
 
 # =============== CVRP Problem ===============
