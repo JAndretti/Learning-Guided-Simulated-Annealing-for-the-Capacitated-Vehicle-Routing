@@ -24,6 +24,7 @@ class CVRPActor(SAModel):
         device: str = "cpu",
         method: str = "free",
         cond_rank: bool = False,
+        cond_detour: bool = False,
     ) -> None:
         """
         Initialize the CVRPActor.
@@ -35,15 +36,21 @@ class CVRPActor(SAModel):
             device (str): Device to run the computations on.
             method (str): Masking method to apply ('free', 'valid', 'rm_depot').
             cond_rank (bool): If True, condition city-2 selection on the bidirectional
-                distance-rank between the candidate and city 1 (2 extra input channels).
+                distance-rank of the two edges an insertion creates (4 extra channels:
+                rank(u, v), rank(v, u), rank(u, succ(v)), rank(succ(v), u)).
+            cond_detour (bool): If True, condition city-2 selection on the insertion
+                cost of placing city 1 after the candidate (2 extra channels:
+                insert_cost, net_delta). Insertion-specific (see
+                CVRP.conditional_insertion_detour).
         """
         super().__init__(device)
         self.c1_state_dim = c
         self.method = method
         self.cond_rank = cond_rank
+        self.cond_detour = cond_detour
         # Features for city 2 include city 1's features -2 to not include meta features twice, resulting in c + c - 2.
-        # +2 more when cond_rank is on (rank_ij, rank_ji).
-        self.c2_state_dim = c * 2 - 2 + (2 if cond_rank else 0)
+        # +4 when cond_rank is on (edge ranks), +2 when cond_detour is on (insertion cost).
+        self.c2_state_dim = c * 2 - 2 + (4 if cond_rank else 0) + (2 if cond_detour else 0)
 
         self.city1_net = build_mlp(self.c1_state_dim, embed_dim, num_hidden_layers, device)
         self.city2_net = build_mlp(self.c2_state_dim, embed_dim, num_hidden_layers, device)
@@ -85,11 +92,7 @@ class CVRPActor(SAModel):
         probs_c1 = torch.softmax(logits_c1, dim=-1)  # shape: (batch_size, problem_dim)
         log_probs_c1 = torch.log(probs_c1)  # shape: (batch_size, problem_dim)
 
-        cond_rank = (
-            kwargs["problem"].conditional_neighbor_rank(routes_ids, c1)
-            if self.cond_rank
-            else None
-        )
+        cond_rank = self._conditional_features(kwargs["problem"], routes_ids, c1)
         c2_state = self._prepare_features_city2(c1_state, c1, n_problems, cond_rank)
         # c2_state shape: (batch_size, problem_dim, c2_state_dim)
 
@@ -144,7 +147,7 @@ class CVRPActor(SAModel):
 
         # action shape: (batch_size, 2)
         action = torch.cat([c1.view(-1, 1).long(), c2.view(-1, 1).long()], dim=-1)
-        cond_rank = problem.conditional_neighbor_rank(x, c1) if self.cond_rank else None
+        cond_rank = self._conditional_features(problem, x, c1)
         return action, None, mask_c2, cond_rank
 
     def sample(
@@ -169,7 +172,7 @@ class CVRPActor(SAModel):
         logits_c1, _ = self._apply_mask_c1(logits_c1, x, self.method)
         c1, log_probs_c1 = self.sample_from_logits(logits_c1, greedy=greedy, one_hot=False)
 
-        cond_rank = problem.conditional_neighbor_rank(x, c1) if self.cond_rank else None
+        cond_rank = self._conditional_features(problem, x, c1)
         c2_state = self._prepare_features_city2(c1_state, c1, n_problems, cond_rank)
         # c2_state shape: (batch_size, problem_dim, c2_state_dim)
 
@@ -204,8 +207,9 @@ class CVRPActor(SAModel):
             state (torch.Tensor): Shape (batch_size, problem_dim, features)
             action (torch.Tensor): Shape (batch_size, 2) containing [City1_Index, City2_Index]
             mask (torch.Tensor): Tensor indicating valid choices for the second city
-            cond_rank (torch.Tensor | None): Stored bidirectional distance-rank between each
-                candidate and city 1, shape (batch_size, problem_dim, 2); None when disabled.
+            cond_rank (torch.Tensor | None): Stored bidirectional distance-rank of the two
+                insertion edges (u, v) and (u, succ(v)), shape (batch_size, problem_dim, 4);
+                None when disabled.
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
@@ -288,8 +292,8 @@ class CVRPActor(SAModel):
             c1_state (torch.Tensor): Node features, shape (batch_size, problem_dim, c)
             c1 (torch.Tensor): Selected city 1 inputs, shape (batch_size,)
             n_problems (int): Batch size
-            cond_rank (torch.Tensor | None): Optional bidirectional distance-rank between
-                each candidate and city 1, shape (batch_size, problem_dim, 2).
+            cond_rank (torch.Tensor | None): Optional bidirectional distance-rank of the two
+                insertion edges (u, v) and (u, succ(v)), shape (batch_size, problem_dim, 4).
 
         Returns:
             torch.Tensor: Combined state features, shape (batch_size, problem_dim, c2_state_dim)
@@ -304,8 +308,35 @@ class CVRPActor(SAModel):
         c1_state_trunc = c1_state[:, :, :-2]  # shape: (batch_size, problem_dim, c-2)
         c2_state = torch.cat([base, c1_state_trunc], -1)  # shape: (batch_size, problem_dim, c*2-2)
         if cond_rank is not None:
-            c2_state = torch.cat([c2_state, cond_rank], -1)  # append (rank_ij, rank_ji)
+            c2_state = torch.cat([c2_state, cond_rank], -1)  # append conditional city-2 features
         return c2_state
+
+    def _conditional_features(
+        self, problem: Any, x: torch.Tensor, c1: torch.Tensor
+    ) -> torch.Tensor | None:
+        """
+        Build the conditional city-2 features that depend on the chosen city 1.
+
+        Concatenates whichever conditional blocks are enabled into a single tensor
+        (carried through the replay buffer / PPO under the 'cond_rank' slot):
+          - cond_rank  -> 4 channels (bidirectional edge ranks)
+          - cond_detour -> 2 channels (insert_cost, net_delta)
+
+        Args:
+            problem: CVRP instance exposing the conditional feature methods.
+            x (torch.Tensor): Route-id sequence, shape (batch_size, problem_dim, 1).
+            c1 (torch.Tensor): Selected city-1 positions, shape (batch_size,).
+
+        Returns:
+            torch.Tensor | None: (batch_size, problem_dim, n_cond_channels) or None when
+                no conditional feature is enabled.
+        """
+        feats = []
+        if self.cond_rank:
+            feats.append(problem.conditional_neighbor_rank(x, c1))
+        if self.cond_detour:
+            feats.append(problem.conditional_insertion_detour(x, c1))
+        return torch.cat(feats, dim=-1) if feats else None
 
 
 class CVRPActorAttention(SAModel):

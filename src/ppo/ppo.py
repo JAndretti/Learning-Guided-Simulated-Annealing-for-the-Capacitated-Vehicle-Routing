@@ -312,7 +312,7 @@ def ppo(
         # Conditional neighbor-rank for city 2 (present only when COND_RANK is enabled)
         cond_rank = None
         if "cond_rank" in all_td.keys():
-            cond_rank = all_td["cond_rank"].reshape(nt, n_problems, problem_dim, 2).to(device)
+            cond_rank = all_td["cond_rank"].reshape(nt, n_problems, problem_dim, -1).to(device)
 
         # One critic pass over all states; next_state_values = state_values shifted by 1
         # (valid because next_state[t] == state[t+1]; terminal row is zeroed by dones)
@@ -355,7 +355,7 @@ def ppo(
     advantages = advantages.view(nt * n_problems)
     returns = returns.view(nt * n_problems)
     if cond_rank is not None:
-        cond_rank = cond_rank.view(nt * n_problems, problem_dim, 2)
+        cond_rank = cond_rank.view(nt * n_problems, problem_dim, -1)
 
     # Advantage normalization (common and recommended practice)
     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)

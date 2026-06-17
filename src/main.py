@@ -426,6 +426,7 @@ def main(config: dict) -> None:
         attn_num_heads=config.get("ATTN_NUM_HEADS", 4),
         attn_num_layers=config.get("ATTN_NUM_LAYERS", 1),
         cond_rank=config.get("COND_RANK", False),
+        cond_detour=config.get("COND_DETOUR", False),
     )
     logger.info("Models Initialized")
 

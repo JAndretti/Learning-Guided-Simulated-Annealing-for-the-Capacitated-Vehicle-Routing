@@ -354,25 +354,89 @@ class CVRP(Problem):
 
     def conditional_neighbor_rank(self, x: torch.Tensor, c1: torch.Tensor) -> torch.Tensor:
         """
-        Distance-rank of each candidate position relative to the chosen first node c1,
-        in both directions, for conditional second-node selection.
+        Distance-rank features describing the two edges an *insertion* move creates.
+
+        The `insertion` operator moves the chosen first node u (city 1) to sit
+        immediately after a candidate position v (city 2), so it creates edges
+        (v, u) and (u, succ(v)). This returns the bidirectional rank of both new
+        edges, giving the policy information about the full local neighbourhood of
+        the insertion -- not just the (u, v) pair.
+
+        NOTE: these semantics match the `insertion` heuristic only. For `swap`/
+        `two_opt` the successor edge does not correspond to the move's geometry.
 
         Args:
             x: [B, L, 1] (or [B, L]) node-index sequence (state column 0 / solution).
             c1: [B] chosen first-node *position* in the sequence (not a node id).
 
         Returns:
-            [B, L, 2] = (rank_matrix[u, v], rank_matrix[v, u]) for every candidate
-            position, with u = node at position c1 and v = node at each position.
-            Values in [0, 1]. Assumes c1 indexes the same sequence as x (true for the
-            'valid'/'free' update methods; not 'rm_depot', which compacts positions).
+            [B, L, 4] = (rank[u, v], rank[v, u], rank[u, succ(v)], rank[succ(v), u])
+            for every candidate position, with u = node at position c1, v = node at
+            each position, and succ(v) = node at the next position (wrapping at the
+            end). Values in [0, 1]. Assumes c1 indexes the same sequence as x (true
+            for the 'valid'/'free' update methods; not 'rm_depot', which compacts
+            positions).
         """
         nodes = x.squeeze(-1).long()  # [B, L] node id at each position
         arange = torch.arange(nodes.size(0), device=nodes.device)
         u = nodes[arange, c1]  # [B] node id at the chosen first position
-        rank_ij = self.rank_matrix[arange, u].gather(1, nodes)  # rank of v from u's view
-        rank_ji = self.rank_matrix[arange, :, u].gather(1, nodes)  # rank of u from v's view
-        return torch.stack([rank_ij, rank_ji], dim=-1)  # [B, L, 2]
+        succ = torch.roll(nodes, shifts=-1, dims=1)  # [B, L] node after each position
+
+        rank_uv = self.rank_matrix[arange, u].gather(1, nodes)  # rank of v from u's view
+        rank_vu = self.rank_matrix[arange, :, u].gather(1, nodes)  # rank of u from v's view
+        rank_us = self.rank_matrix[arange, u].gather(1, succ)  # rank of succ(v) from u's view
+        rank_su = self.rank_matrix[arange, :, u].gather(1, succ)  # rank of u from succ(v)'s view
+        return torch.stack([rank_uv, rank_vu, rank_us, rank_su], dim=-1)  # [B, L, 4]
+
+    def conditional_insertion_detour(self, x: torch.Tensor, c1: torch.Tensor) -> torch.Tensor:
+        """
+        Cost of inserting the chosen first node u (city 1) after each candidate position.
+
+        The `insertion` operator moves u to sit between a candidate position v (city 2)
+        and its successor succ(v). This returns, for every candidate position:
+          - insert_cost = d(v, u) + d(u, succ(v)) - d(v, succ(v))   (>= 0)
+                The detour u creates at its new location (cheapest-insertion delta).
+          - net_delta   = insert_cost - removal_gain(u)
+                The actual change in total tour length of the full move, where
+                removal_gain(u) = d(prev(u), u) + d(u, succ(u)) - d(prev(u), succ(u))
+                is the saving from pulling u out of its current spot (constant over v).
+                net_delta < 0 means the move shortens the tour.
+
+        NOTE: insertion-specific, like conditional_neighbor_rank. Raw (un-normalized)
+        distances, matching calculate_detour_features.
+
+        Args:
+            x: [B, L, 1] (or [B, L]) node-index sequence (state column 0 / solution).
+            c1: [B] chosen first-node *position* in the sequence (not a node id).
+
+        Returns:
+            [B, L, 2] = (insert_cost, net_delta) for every candidate position.
+        """
+        nodes = x.squeeze(-1).long()  # [B, L] node id at each position
+        arange = torch.arange(nodes.size(0), device=nodes.device)
+        u = nodes[arange, c1]  # [B] node id at the chosen first position
+
+        prev = torch.roll(nodes, shifts=1, dims=1)  # [B, L] node before each position
+        succ = torch.roll(nodes, shifts=-1, dims=1)  # [B, L] node after each position
+
+        # Insertion cost at every candidate position v: d(v,u) + d(u,succ(v)) - d(v,succ(v))
+        b = arange[:, None]  # [B, 1] broadcasts over the L positions
+        d_vu = self.matrix[b, nodes, u[:, None]]  # d(v, u)
+        d_us = self.matrix[b, u[:, None], succ]  # d(u, succ(v))
+        d_vs = self.matrix[b, nodes, succ]  # d(v, succ(v))
+        insert_cost = d_vu + d_us - d_vs  # [B, L]
+
+        # Removal gain of u at its current position (scalar per instance, broadcast over L)
+        prev_u = prev[arange, c1]  # node before u
+        succ_u = succ[arange, c1]  # node after u
+        removal_gain = (
+            self.matrix[arange, prev_u, u]
+            + self.matrix[arange, u, succ_u]
+            - self.matrix[arange, prev_u, succ_u]
+        )  # [B]
+        net_delta = insert_cost - removal_gain[:, None]  # [B, L]
+
+        return torch.stack([insert_cost, net_delta], dim=-1)  # [B, L, 2]
 
     # ------------------------------------------------------------------------
     # Initialization & Helpers

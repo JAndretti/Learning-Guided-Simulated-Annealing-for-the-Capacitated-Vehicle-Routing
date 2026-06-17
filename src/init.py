@@ -207,6 +207,7 @@ def initialize_models(
     attn_num_heads: int = 4,
     attn_num_layers: int = 1,
     cond_rank: bool = False,
+    cond_detour: bool = False,
 ) -> Tuple[SAModel, Union[CVRPCritic, CVRPCriticAttention]]:
     """
     Initialize actor and critic neural networks.
@@ -239,6 +240,7 @@ def initialize_models(
             device=device,
             method=update_method,
             cond_rank=cond_rank,
+            cond_detour=cond_detour,
         )
     elif model_type == "attention":
         actor = CVRPActorAttention(
