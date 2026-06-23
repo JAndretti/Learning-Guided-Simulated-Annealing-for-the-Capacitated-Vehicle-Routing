@@ -17,8 +17,7 @@ def build_mlp(
 ) -> nn.Sequential:
     """Build an MLP: Linear+LeakyReLU entry, N hidden layers, Linear output.
 
-    Replaces both `create_network` and `CVRPActorAttention._build_scorer` from
-    the old model.py. Identical architecture; `output_dim` defaults to 1.
+    `output_dim` defaults to 1.
     """
     layers: list[nn.Module] = []
     layers.append(nn.Linear(input_dim, embed_dim, bias=True, device=device))
@@ -60,10 +59,7 @@ class SAModel(nn.Module):
     def sample_from_logits(
         self, logits: torch.Tensor, greedy: bool = False, one_hot: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Sample actions from logits using greedy argmax or multinomial sampling.
-
-        Previously copy-pasted identically on CVRPActor and CVRPActorAttention.
-        """
+        """Sample actions from logits using greedy argmax or multinomial sampling."""
         n_problems, problem_dim = logits.shape
         probs = torch.softmax(logits, dim=-1)
         if greedy:

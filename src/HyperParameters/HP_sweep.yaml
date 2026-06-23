@@ -576,17 +576,6 @@
 #   SEED: [0, 1, 2]
 
 
-# --- V4: critic architecture (paragraph "Critic Architecture") --------------
-#   Fixed so far (HP.yaml): + actor architecture. Expect ff.
-#   -> bake winner into HP.yaml: CRITIC_MODEL.
-#   EVAL: uv run eval/run.py --dataset random --FOLDER V4_critic --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V4_critic]
-#   CRITIC_MODEL: [ff, attention]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-
-
 # --- V5: reward formulation (Table reward_formulations) ----------------------
 #   Fixed so far (HP.yaml): + critic. Expect immediate; step_penalty_* collapse.
 #   -> bake winner into HP.yaml: REWARD.
@@ -730,13 +719,25 @@
 #   EVAL on Nazari: uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
 #   EVAL on Uchoa:  uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA uchoa  --OUTER_STEPS 10000 --dtype float16 --no-baseline
 # - GROUP: [V11_dist]
-#   DATA: [random, uchoa]
+#   DATA: [random]
 #   CL: [true]
 #   CL_TYPE: [sig]
 #   MAX_OUTER_STEPS_CL: [250]
 #   MAX_PROB_STEP: [2000]
 #   STEEP_SIG: [0.010]
 #   PPO_EPOCHS: [3]            # <-- FIX from V9
+#   NAZARI: [true]
+#   SEED: [0, 1, 2]
+
+# - GROUP: [V11_dist]
+#   DATA: [uchoa]
+#   CL: [true]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
+#   STEEP_SIG: [0.010]
+#   PPO_EPOCHS: [3]            # <-- FIX from V9
+#   NAZARI: [false]
 #   SEED: [0, 1, 2]
 
 

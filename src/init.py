@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import torch
 
-from model import CVRPActor, CVRPActorAttention, CVRPCritic, CVRPCriticAttention, SAModel
+from model import CVRPActor, CVRPCritic, SAModel
 from problem import CVRP
 from sa import sa_test, sa_train
 
@@ -203,12 +203,9 @@ def initialize_models(
     heuristic: Union[str, List[str]],
     seed: int = 0,
     device: str = "cpu",
-    attn_dim: int = 64,
-    attn_num_heads: int = 4,
-    attn_num_layers: int = 1,
     cond_rank: bool = False,
     cond_detour: bool = False,
-) -> Tuple[SAModel, Union[CVRPCritic, CVRPCriticAttention]]:
+) -> Tuple[SAModel, CVRPCritic]:
     """
     Initialize actor and critic neural networks.
 
@@ -242,17 +239,6 @@ def initialize_models(
             cond_rank=cond_rank,
             cond_detour=cond_detour,
         )
-    elif model_type == "attention":
-        actor = CVRPActorAttention(
-            attn_dim=attn_dim,
-            embed_dim=embedding_dim,
-            c=entry,
-            num_hidden_layers=num_h_layers,
-            num_heads=attn_num_heads,
-            num_attn_layers=attn_num_layers,
-            device=device,
-            method=update_method,
-        )
     else:
         raise ValueError(f"Unknown model type specified: {model_type}")
 
@@ -263,14 +249,6 @@ def initialize_models(
             embed_dim=embedding_dim,
             c=entry,
             num_hidden_layers=num_h_layers,
-            device=device,
-        )
-    elif critic_type == "attention":
-        critic = CVRPCriticAttention(
-            embed_dim=embedding_dim,
-            c=entry,
-            num_hidden_layers=num_h_layers,
-            num_heads=attn_num_heads,
             device=device,
         )
     else:

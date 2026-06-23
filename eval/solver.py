@@ -73,9 +73,6 @@ def build_actor(
         heuristic=HP["HEURISTIC"],
         seed=seed,
         device=device,
-        attn_dim=HP.get("ATTN_DIM", 64),
-        attn_num_heads=HP.get("ATTN_NUM_HEADS", 4),
-        attn_num_layers=HP.get("ATTN_NUM_LAYERS", 1),
     )
     actor = _load_weights(actor, model_path)
     actor = actor.to(device)
