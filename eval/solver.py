@@ -127,14 +127,14 @@ def run_lgsa(
 # 8 isometries of the unit square (dihedral group D4).
 # All preserve pairwise Euclidean distances: ‖aug(pᵢ)−aug(pⱼ)‖ = ‖pᵢ−pⱼ‖.
 AUGMENTATIONS = [
-    lambda p: p,                                                        # identity
-    lambda p: torch.stack([1 - p[..., 0],     p[..., 1]], dim=-1),     # flip x
-    lambda p: torch.stack([    p[..., 0], 1 - p[..., 1]], dim=-1),     # flip y
-    lambda p: torch.stack([1 - p[..., 0], 1 - p[..., 1]], dim=-1),    # flip both
-    lambda p: torch.stack([    p[..., 1],     p[..., 0]], dim=-1),     # swap xy
-    lambda p: torch.stack([1 - p[..., 1],     p[..., 0]], dim=-1),    # swap + flip x
-    lambda p: torch.stack([    p[..., 1], 1 - p[..., 0]], dim=-1),    # swap + flip y
-    lambda p: torch.stack([1 - p[..., 1], 1 - p[..., 0]], dim=-1),   # swap + flip both
+    lambda p: p,  # identity
+    lambda p: torch.stack([1 - p[..., 0], p[..., 1]], dim=-1),  # flip x
+    lambda p: torch.stack([p[..., 0], 1 - p[..., 1]], dim=-1),  # flip y
+    lambda p: torch.stack([1 - p[..., 0], 1 - p[..., 1]], dim=-1),  # flip both
+    lambda p: torch.stack([p[..., 1], p[..., 0]], dim=-1),  # swap xy
+    lambda p: torch.stack([1 - p[..., 1], p[..., 0]], dim=-1),  # swap + flip x
+    lambda p: torch.stack([p[..., 1], 1 - p[..., 0]], dim=-1),  # swap + flip y
+    lambda p: torch.stack([1 - p[..., 1], 1 - p[..., 0]], dim=-1),  # swap + flip both
 ]
 
 
