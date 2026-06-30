@@ -567,11 +567,11 @@
 #   NOTE: COND_RANK currently supports UPDATE_METHOD valid/free, NOT rm_depot
 #   (which compacts depot positions); keep UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_rank --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V2_cond_rank]
-  COND_RANK: [false, true]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_cond_rank]
+#   COND_RANK: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V2c: conditional insertion-detour for city-2 selection (COND_DETOUR) ----
@@ -585,11 +585,11 @@
 #   `insertion` operator) and supports UPDATE_METHOD valid/free, NOT rm_depot;
 #   keep HEURISTIC=insertion and UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_detour --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V2_cond_detour]
-  COND_DETOUR: [false, true]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_cond_detour]
+#   COND_DETOUR: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V2d: COND_RANK x COND_DETOUR interaction (both conditioners together) ----
@@ -598,12 +598,12 @@
 #   interaction beyond their individual effects. Same inheritance/notes as V2c
 #   (insertion + valid only). The (false,false) cell reproduces the plain best set.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_combo --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V2_cond_combo]
-  COND_RANK: [false, true]
-  COND_DETOUR: [false, true]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_cond_combo]
+#   COND_RANK: [false, true]
+#   COND_DETOUR: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V3: actor network capacity (Table architecture_comp) -------------------
