@@ -323,7 +323,7 @@
 #   One folder PER arm (the `features` dict cannot be a disaggregating column).
 #   -> bake the winning feature set into HP.yaml `features`.
 #   EVAL (per folder): uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-#
+
 # #   -- baseline: ALL 13 feature groups on --
 # - GROUP: [V2_feat_all]
 #   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
@@ -502,8 +502,8 @@
 # --- V2_best_set: CONSTRUCT + CONFIRM the best feature set (5 seeds) ----------
 #   The diagnostic groups above only MEASURE impact (LOO = marginal value with all
 #   else present; isolation = standalone value over V2_iso_base). This batch is the
-#   CONSTRUCTION step: read those results, build ONE candidate best set with the rule
-#   below, and confirm it seed-paired against the all-on reference.
+#   CONSTRUCTION step: read those results, build CANDIDATE best sets with the rule
+#   below, and confirm them seed-paired against the all-on reference.
 #   PRUNING RULE (build the candidate set):
 #     * keep static + meta (almost always essential);
 #     * DROP a feature if its LOO removal changes mean final_cost by < the Batch-0
@@ -516,12 +516,40 @@
 #   worse than all-on; on a tie, the SMALLER set wins. BAKE it into HP.yaml `features`
 #   before running V2b / V3 (later batches inherit it).
 #   EVAL (per folder): uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V2_best_set]            # <-- FILL: flip the PRUNED features to false
-#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
+#
+#   MULTI-CANDIDATE DESIGN (from the V2 ablation, noise floor sigma~=0.183, 3 seeds):
+#   Two decisions are borderline and worth testing empirically rather than trusting
+#   the noisy floor: keep `centroid`? (sub-floor LOO +0.098, but iso +0.480) and keep
+#   a capacity member `node_pct`? (capacity theme matters +0.343 but no single member
+#   does). All candidates share the CORE that passes cleanly:
+#       static, meta, topology, neighbor_rank, detour
+#   The four candidates below are the 2x2 over {centroid, node_pct}, plus the all-on
+#   reference. Density (5/10/33) + demand_max + route_pct + slack are dropped in ALL
+#   candidates (density theme removal +0.145 < floor; the other two fail both tests).
+#   Read the 5-seed means, then bake the smallest set that is NOT significantly worse
+#   than all-on into HP.yaml `features`.
+#
+# - GROUP: [V2_best_core5]          # CORE only (5): drop centroid AND capacity
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: false, density5: false, density10%: false, density33%: false, detour: true, centroid: false, route_pct: false, slack: false, node_pct: false, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2, 3, 4]
-# - GROUP: [V2_best_all]            # all-on reference, seed-paired at 5 seeds
+# - GROUP: [V2_best_centroid6]      # CORE + centroid (6): no capacity
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: false, density5: false, density10%: false, density33%: false, detour: true, centroid: true, route_pct: false, slack: false, node_pct: false, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2, 3, 4]
+# - GROUP: [V2_best_nodepct6]       # CORE + node_pct (6): capacity representative, no centroid
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: false, density5: false, density10%: false, density33%: false, detour: true, centroid: false, route_pct: false, slack: false, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2, 3, 4]
+# - GROUP: [V2_best_set]            # CORE + centroid + node_pct (7): the rule's primary pick
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: false, density5: false, density10%: false, density33%: false, detour: true, centroid: true, route_pct: false, slack: false, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2, 3, 4]
+# - GROUP: [V2_best_all]            # all-on reference (13), seed-paired at 5 seeds
 #   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: true, slack: true, node_pct: true, meta: true}]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
@@ -539,11 +567,11 @@
 #   NOTE: COND_RANK currently supports UPDATE_METHOD valid/free, NOT rm_depot
 #   (which compacts depot positions); keep UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_rank --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V2_cond_rank]
-#   COND_RANK: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V2_cond_rank]
+  COND_RANK: [false, true]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V2c: conditional insertion-detour for city-2 selection (COND_DETOUR) ----
@@ -557,11 +585,11 @@
 #   `insertion` operator) and supports UPDATE_METHOD valid/free, NOT rm_depot;
 #   keep HEURISTIC=insertion and UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_detour --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V2_cond_detour]
-#   COND_DETOUR: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V2_cond_detour]
+  COND_DETOUR: [false, true]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V2d: COND_RANK x COND_DETOUR interaction (both conditioners together) ----
@@ -570,12 +598,12 @@
 #   interaction beyond their individual effects. Same inheritance/notes as V2c
 #   (insertion + valid only). The (false,false) cell reproduces the plain best set.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_combo --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V2_cond_combo]
-#   COND_RANK: [false, true]
-#   COND_DETOUR: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V2_cond_combo]
+  COND_RANK: [false, true]
+  COND_DETOUR: [false, true]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V3: actor network capacity (Table architecture_comp) -------------------
