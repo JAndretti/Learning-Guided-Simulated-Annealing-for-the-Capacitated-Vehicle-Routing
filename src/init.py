@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import torch
 
-from model import CVRPActor, CVRPCritic, SAModel
+from model import CVRPActor, CVRPCritic, CVRPCriticDeepSets, SAModel
 from problem import CVRP
 from sa import sa_test, sa_train
 
@@ -205,7 +205,7 @@ def initialize_models(
     device: str = "cpu",
     cond_rank: bool = False,
     cond_detour: bool = False,
-) -> Tuple[SAModel, CVRPCritic]:
+) -> Tuple[SAModel, Union[CVRPCritic, CVRPCriticDeepSets]]:
     """
     Initialize actor and critic neural networks.
 
@@ -246,6 +246,13 @@ def initialize_models(
     # Initialize critic model
     if critic_type == "ff":
         critic = CVRPCritic(
+            embed_dim=embedding_dim,
+            c=entry,
+            num_hidden_layers=num_h_layers,
+            device=device,
+        )
+    elif critic_type == "deepsets":
+        critic = CVRPCriticDeepSets(
             embed_dim=embedding_dim,
             c=entry,
             num_hidden_layers=num_h_layers,

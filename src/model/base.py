@@ -1,5 +1,4 @@
 # src/model/base.py
-import math
 from typing import Optional, Tuple
 
 import numpy as np
@@ -131,72 +130,3 @@ class SAModel(nn.Module):
             nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0.0)
-
-
-class PositionalEncoding(nn.Module):
-    """
-    Standard Sinusoidal Positional Encoding.
-    Injects information about the relative or absolute position of the nodes in the sequence.
-    """
-
-    pe: torch.Tensor
-
-    def __init__(self, embed_dim: int, max_len: int = 5000) -> None:
-        """
-        Initializes the positional encoding.
-
-        Args:
-            embed_dim (int): The dimensionality of the embeddings.
-            max_len (int): The maximum sequence length to pre-compute. Defaults to 5000.
-        """
-        super().__init__()
-
-        # Initialize a zero tensor for positional encodings
-        # pe shape: [max_len, embed_dim]
-        pe = torch.zeros(max_len, embed_dim)
-
-        # Create a tensor of positions
-        # position shape: [max_len, 1]
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-
-        # Compute the division term for the sinusoidal formulas
-        # div_term shape: [embed_dim // 2]
-        div_term = torch.exp(
-            torch.arange(0, embed_dim, 2).float() * (-math.log(10000.0) / embed_dim)
-        )
-
-        # Apply sine to even indices
-        # pe[:, 0::2] shape: [max_len, embed_dim // 2]
-        pe[:, 0::2] = torch.sin(position * div_term)
-
-        # Apply cosine to odd indices
-        # pe[:, 1::2] shape: [max_len, embed_dim // 2]
-        pe[:, 1::2] = torch.cos(position * div_term)
-
-        # Add a batch dimension to simplify broadcasting during forward
-        # pe shape: [1, max_len, embed_dim]
-        pe = pe.unsqueeze(0)
-
-        # Register `pe` as a buffer so it's a part of the module's state but not a trainable parameter
-        self.register_buffer("pe", pe)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Adds positional encoding to the input tensor.
-
-        Args:
-            x (torch.Tensor): Input sequence tensor.
-                              Expected shape: [Batch, Seq_Len, Embed_Dim]
-
-        Returns:
-            torch.Tensor: The input tensor with positional encoding added.
-                          Output shape: [Batch, Seq_Len, Embed_Dim]
-        """
-        # Extract the sequence length from the input tensor
-        seq_len = x.size(1)
-
-        # Add the pre-computed positional encoding to the input.
-        # self.pe[:, :seq_len, :] shape: [1, Seq_Len, Embed_Dim]
-        # It broadcasts over the Batch dimension of x.
-        x = x + self.pe[:, :seq_len, :]
-        return x

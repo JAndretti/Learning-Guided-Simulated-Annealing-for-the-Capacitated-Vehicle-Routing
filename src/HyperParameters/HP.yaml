@@ -50,7 +50,7 @@ features:
 MODEL: "seq" # Model type: seq
 COND_RANK: False # Condition city-2 selection on the bidirectional distance-rank to city-1 (seq actor only)
 COND_DETOUR: False # Condition city-2 selection on insertion cost of city-1 after the candidate: insert_cost + net_delta (seq actor, insertion only)
-CRITIC_MODEL: "ff" # Critic model type: ff
+CRITIC_MODEL: "ff" # Critic model type: ff, deepsets
 EMBEDDING_DIM: 32 # Embedding dimension for MLP scorer hidden layers
 NUM_H_LAYERS: 1 # Number of hidden layers in MLP components
 
