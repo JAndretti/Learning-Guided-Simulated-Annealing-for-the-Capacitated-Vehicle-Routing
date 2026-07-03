@@ -486,17 +486,17 @@
 
 
 
-- GROUP: [V2_old_best]            # all-on reference, seed-paired at 5 seeds
-  features: [{static: true, topology: true, neighbor_rank: false, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_old_best]            # all-on reference, seed-paired at 5 seeds
+#   features: [{static: true, topology: true, neighbor_rank: false, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
-- GROUP: [V2_old_best2]            # all-on reference, seed-paired at 5 seeds
-  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_old_best2]            # all-on reference, seed-paired at 5 seeds
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V2_best_set: CONSTRUCT + CONFIRM the best feature set (5 seeds) ----------
@@ -555,6 +555,14 @@
 #   CL: [false]
 #   SEED: [0, 1, 2, 3, 4]
 
+- GROUP: [V2_best_no_route_pct]            # seed-paired at 5 seeds
+  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+  PPO_EPOCHS: [3]
+  COND_RANK: [false]
+  COND_DETOUR: [false]
+  CL: [false]
+  SEED: [0, 1, 2, 3, 4]
+
 
 # --- V2b: conditional neighbor-rank for city-2 selection (COND_RANK) ---------
 #   SEPARATE batch, run AFTER V2_best_set is baked into HP.yaml: it adds the COND_RANK
@@ -567,11 +575,13 @@
 #   NOTE: COND_RANK currently supports UPDATE_METHOD valid/free, NOT rm_depot
 #   (which compacts depot positions); keep UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_rank --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V2_cond_rank]
-#   COND_RANK: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V2_cond_rank]
+  COND_RANK: [false, true]
+  COND_DETOUR: [false]
+  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V2c: conditional insertion-detour for city-2 selection (COND_DETOUR) ----
@@ -585,11 +595,13 @@
 #   `insertion` operator) and supports UPDATE_METHOD valid/free, NOT rm_depot;
 #   keep HEURISTIC=insertion and UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_detour --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V2_cond_detour]
-#   COND_DETOUR: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V2_cond_detour]
+  COND_DETOUR: [false, true]
+  COND_RANK: [false]
+  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V2d: COND_RANK x COND_DETOUR interaction (both conditioners together) ----
@@ -598,12 +610,13 @@
 #   interaction beyond their individual effects. Same inheritance/notes as V2c
 #   (insertion + valid only). The (false,false) cell reproduces the plain best set.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_combo --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V2_cond_combo]
-#   COND_RANK: [false, true]
-#   COND_DETOUR: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V2_cond_combo]
+  COND_RANK: [false, true]
+  COND_DETOUR: [false, true]
+  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V3: actor network capacity (Table architecture_comp) -------------------
@@ -613,65 +626,6 @@
 # - GROUP: [V3_arch]
 #   EMBEDDING_DIM: [16, 32, 64]
 #   NUM_H_LAYERS: [1, 2]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-
-
-# --- V3b: learned global context on the current actor (flag A/B) -------------
-#   Fixed so far (HP.yaml): operator + feasibility + feature set + V3 capacity.
-#   GLOBAL_CONTEXT concatenates a mean|max|std pooled instance summary to both
-#   stages' inputs — the cheapest fix for the actor's "no learned global
-#   context" structural weakness. Judge on test min_cost/Gain (PPO loss is not
-#   comparable across policy parameterisations).
-#   -> bake winner into HP.yaml: GLOBAL_CONTEXT.
-#   EVAL: uv run eval/run.py --dataset random --FOLDER V3b_ctx --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V3b_ctx]
-#   MODEL: [seq]
-#   GLOBAL_CONTEXT: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-
-
-# --- V3c: shared node encoder + two heads, concat vs bilinear stage-2 --------
-#   Run AFTER V3b; bake its GLOBAL_CONTEXT winner into HP.yaml AND mirror it in
-#   V3c_seq_ref below (seed-paired reference on the same key set). The shared
-#   actor encodes each node once (h_i) and scores c1 from h_i (+ctx); stage 2
-#   is either a concat head [h_j | h_c1 | ctx] or a bilinear compatibility
-#   q.k/sqrt(d) (BILINEAR=true; ignored by MODEL=seq).
-#   NOTE: if `shared` wins, re-running the V3_arch capacity sweep
-#   (EMBEDDING_DIM x NUM_H_LAYERS) on the winner is worthwhile — capacity now
-#   includes the encoder.
-#   -> bake winners into HP.yaml: MODEL, GLOBAL_CONTEXT, BILINEAR.
-#   EVAL (per folder): uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V3c_seq_ref]
-#   MODEL: [seq]
-#   GLOBAL_CONTEXT: [true]      # <-- FIX from V3b
-#   BILINEAR: [false]           # ignored by seq
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-# - GROUP: [V3c_shared]
-#   MODEL: [shared]
-#   GLOBAL_CONTEXT: [false, true]
-#   BILINEAR: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-
-
-# --- V3d: logit clipping x learnable temperature (distribution shaping) ------
-#   Run AFTER V3c (inherits the winning actor from HP.yaml). These flags do NOT
-#   add capacity — they tame the softmax: LOGIT_CLIP bounds logits to
-#   C*tanh(l) so entropy cannot fully collapse; LEARNABLE_TEMP adds one
-#   trainable tau per stage. Judge on Entropy / Average_KL stability AND test
-#   min_cost. 0.0 disables clipping; 10.0 is the Kool et al. constant.
-#   -> bake winners into HP.yaml: LOGIT_CLIP, LEARNABLE_TEMP.
-#   EVAL: uv run eval/run.py --dataset random --FOLDER V3d_stab --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V3d_stab]
-#   LOGIT_CLIP: [0.0, 10.0]
-#   LEARNABLE_TEMP: [false, true]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
