@@ -424,6 +424,10 @@ def main(config: dict) -> None:
         device=device,
         cond_rank=config.get("COND_RANK", False),
         cond_detour=config.get("COND_DETOUR", False),
+        global_context=config.get("GLOBAL_CONTEXT", False),
+        bilinear=config.get("BILINEAR", False),
+        logit_clip=config.get("LOGIT_CLIP", 0.0),
+        learnable_temp=config.get("LEARNABLE_TEMP", False),
     )
     logger.info("Models Initialized")
 

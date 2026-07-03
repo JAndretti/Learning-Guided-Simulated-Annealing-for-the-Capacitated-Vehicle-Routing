@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Tuple, Union
 
 import torch
 
-from model import CVRPActor, CVRPCritic, CVRPCriticDeepSets, SAModel
+from model import CVRPActor, CVRPActorShared, CVRPCritic, CVRPCriticDeepSets, SAModel
 from problem import CVRP
 from sa import sa_test, sa_train
 
@@ -205,21 +205,30 @@ def initialize_models(
     device: str = "cpu",
     cond_rank: bool = False,
     cond_detour: bool = False,
+    global_context: bool = False,
+    bilinear: bool = False,
+    logit_clip: float = 0.0,
+    learnable_temp: bool = False,
 ) -> Tuple[SAModel, Union[CVRPCritic, CVRPCriticDeepSets]]:
     """
     Initialize actor and critic neural networks.
 
     Args:
-        model_type: Type of actor model ("pairs" or "seq")
-        critic_type: Type of critic model ("ff")
+        model_type: Type of actor model ("seq" or "shared")
+        critic_type: Type of critic model ("ff" or "deepsets")
         embedding_dim: Dimension of embeddings
         entry: Number of input features
         num_h_layers: Number of hidden layers
         update_method: Method for updating heuristic information
         heuristic: Heuristic(s) to be used
         seed: Random seed for model initialization
-        train: Whether to initialize the critic model
         device: Compute device string
+        cond_rank: Condition city-2 selection on bidirectional edge ranks
+        cond_detour: Condition city-2 selection on insertion cost
+        global_context: Feed a mean|max|std pooled instance summary to both stages
+        bilinear: Bilinear compatibility stage-2 scorer ("shared" actor only)
+        logit_clip: 0 disables; >0 applies C*tanh(logits) clipping
+        learnable_temp: Learnable softmax temperature, one per stage
 
     Returns:
         Tuple of (actor_model, critic_model)
@@ -238,6 +247,23 @@ def initialize_models(
             method=update_method,
             cond_rank=cond_rank,
             cond_detour=cond_detour,
+            global_context=global_context,
+            logit_clip=logit_clip,
+            learnable_temp=learnable_temp,
+        )
+    elif model_type == "shared":
+        actor = CVRPActorShared(
+            embed_dim=embedding_dim,
+            c=entry,
+            num_hidden_layers=num_h_layers,
+            device=device,
+            method=update_method,
+            cond_rank=cond_rank,
+            cond_detour=cond_detour,
+            global_context=global_context,
+            bilinear=bilinear,
+            logit_clip=logit_clip,
+            learnable_temp=learnable_temp,
         )
     else:
         raise ValueError(f"Unknown model type specified: {model_type}")

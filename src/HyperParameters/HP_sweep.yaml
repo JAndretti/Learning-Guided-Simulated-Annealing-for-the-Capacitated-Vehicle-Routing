@@ -618,6 +618,65 @@
 #   SEED: [0, 1, 2]
 
 
+# --- V3b: learned global context on the current actor (flag A/B) -------------
+#   Fixed so far (HP.yaml): operator + feasibility + feature set + V3 capacity.
+#   GLOBAL_CONTEXT concatenates a mean|max|std pooled instance summary to both
+#   stages' inputs — the cheapest fix for the actor's "no learned global
+#   context" structural weakness. Judge on test min_cost/Gain (PPO loss is not
+#   comparable across policy parameterisations).
+#   -> bake winner into HP.yaml: GLOBAL_CONTEXT.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V3b_ctx --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V3b_ctx]
+#   MODEL: [seq]
+#   GLOBAL_CONTEXT: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V3c: shared node encoder + two heads, concat vs bilinear stage-2 --------
+#   Run AFTER V3b; bake its GLOBAL_CONTEXT winner into HP.yaml AND mirror it in
+#   V3c_seq_ref below (seed-paired reference on the same key set). The shared
+#   actor encodes each node once (h_i) and scores c1 from h_i (+ctx); stage 2
+#   is either a concat head [h_j | h_c1 | ctx] or a bilinear compatibility
+#   q.k/sqrt(d) (BILINEAR=true; ignored by MODEL=seq).
+#   NOTE: if `shared` wins, re-running the V3_arch capacity sweep
+#   (EMBEDDING_DIM x NUM_H_LAYERS) on the winner is worthwhile — capacity now
+#   includes the encoder.
+#   -> bake winners into HP.yaml: MODEL, GLOBAL_CONTEXT, BILINEAR.
+#   EVAL (per folder): uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V3c_seq_ref]
+#   MODEL: [seq]
+#   GLOBAL_CONTEXT: [true]      # <-- FIX from V3b
+#   BILINEAR: [false]           # ignored by seq
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V3c_shared]
+#   MODEL: [shared]
+#   GLOBAL_CONTEXT: [false, true]
+#   BILINEAR: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V3d: logit clipping x learnable temperature (distribution shaping) ------
+#   Run AFTER V3c (inherits the winning actor from HP.yaml). These flags do NOT
+#   add capacity — they tame the softmax: LOGIT_CLIP bounds logits to
+#   C*tanh(l) so entropy cannot fully collapse; LEARNABLE_TEMP adds one
+#   trainable tau per stage. Judge on Entropy / Average_KL stability AND test
+#   min_cost. 0.0 disables clipping; 10.0 is the Kool et al. constant.
+#   -> bake winners into HP.yaml: LOGIT_CLIP, LEARNABLE_TEMP.
+#   EVAL: uv run eval/run.py --dataset random --FOLDER V3d_stab --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+# - GROUP: [V3d_stab]
+#   LOGIT_CLIP: [0.0, 10.0]
+#   LEARNABLE_TEMP: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
 # --- V5: reward formulation (Table reward_formulations) ----------------------
 #   Fixed so far (HP.yaml): + critic. Expect immediate; step_penalty_* collapse.
 #   -> bake winner into HP.yaml: REWARD.
