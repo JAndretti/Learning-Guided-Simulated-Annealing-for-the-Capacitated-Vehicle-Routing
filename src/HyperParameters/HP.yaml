@@ -41,7 +41,7 @@ features:
   density33%: True      # mean distance to 33% nearest neighbors
   detour: True          # detour
   centroid: True        # route centroid
-  route_pct: False       # load of the route
+  route_pct: True       # load of the route
   slack: True          # remaining load of the route
   node_pct: True       # node demand percentage with route capacity
   meta: True            # temp, time

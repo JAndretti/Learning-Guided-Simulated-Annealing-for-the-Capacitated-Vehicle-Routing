@@ -555,13 +555,13 @@
 #   CL: [false]
 #   SEED: [0, 1, 2, 3, 4]
 
-- GROUP: [V2_best_no_route_pct]            # seed-paired at 5 seeds
-  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
-  PPO_EPOCHS: [3]
-  COND_RANK: [false]
-  COND_DETOUR: [false]
-  CL: [false]
-  SEED: [0, 1, 2, 3, 4]
+# - GROUP: [V2_best_no_route_pct]            # seed-paired at 5 seeds
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   COND_RANK: [false]
+#   COND_DETOUR: [false]
+#   CL: [false]
+#   SEED: [0, 1, 2, 3, 4]
 
 
 # --- V2b: conditional neighbor-rank for city-2 selection (COND_RANK) ---------
@@ -575,13 +575,13 @@
 #   NOTE: COND_RANK currently supports UPDATE_METHOD valid/free, NOT rm_depot
 #   (which compacts depot positions); keep UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_rank --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V2_cond_rank]
-  COND_RANK: [false, true]
-  COND_DETOUR: [false]
-  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_cond_rank]
+#   COND_RANK: [false, true]
+#   COND_DETOUR: [false]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V2c: conditional insertion-detour for city-2 selection (COND_DETOUR) ----
@@ -595,13 +595,13 @@
 #   `insertion` operator) and supports UPDATE_METHOD valid/free, NOT rm_depot;
 #   keep HEURISTIC=insertion and UPDATE_METHOD=valid for this batch.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_detour --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V2_cond_detour]
-  COND_DETOUR: [false, true]
-  COND_RANK: [false]
-  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_cond_detour]
+#   COND_DETOUR: [false, true]
+#   COND_RANK: [false]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V2d: COND_RANK x COND_DETOUR interaction (both conditioners together) ----
@@ -610,13 +610,13 @@
 #   interaction beyond their individual effects. Same inheritance/notes as V2c
 #   (insertion + valid only). The (false,false) cell reproduces the plain best set.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V2_cond_combo --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V2_cond_combo]
-  COND_RANK: [false, true]
-  COND_DETOUR: [false, true]
-  features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V2_cond_combo]
+#   COND_RANK: [false, true]
+#   COND_DETOUR: [false, true]
+#   features: [{static: true, topology: true, neighbor_rank: true, demand_max: true, density5: true, density10%: true, density33%: true, detour: true, centroid: true, route_pct: false, slack: true, node_pct: true, meta: true}]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # ============================================================================
@@ -639,12 +639,14 @@
 # --- V3a: actor network capacity (Table architecture_comp) ------------------
 #   Raw width/depth of the MLP scorers. Expect 32/1.
 #   -> bake winner into HP.yaml: EMBEDDING_DIM, NUM_H_LAYERS.
-# - GROUP: [V3_arch]
-#   EMBEDDING_DIM: [16, 32, 64]
-#   NUM_H_LAYERS: [1, 2]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V3_arch]
+  MODEL: [seq]
+  EMBEDDING_DIM: [16, 32, 64]
+  NUM_H_LAYERS: [1, 2]
+  GLOBAL_CONTEXT: [false]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V3b: learned global context (flag A/B on the current actor) ------------
@@ -654,12 +656,14 @@
 #   cheapest fix for the actor's "no learned global context" weakness (one
 #   O(N*c) pooling op per SA step; no new structure).
 #   -> bake winner into HP.yaml: GLOBAL_CONTEXT.
-# - GROUP: [V3b_ctx]
-#   MODEL: [seq]
-#   GLOBAL_CONTEXT: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V3b_ctx]
+  MODEL: [seq]
+  EMBEDDING_DIM: [32]
+  NUM_H_LAYERS: [1]
+  GLOBAL_CONTEXT: [false, true]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V3c: shared encoder + two heads; concat vs bilinear stage-2 -------------
