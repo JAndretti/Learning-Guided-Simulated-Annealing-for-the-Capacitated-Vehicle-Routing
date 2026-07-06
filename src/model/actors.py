@@ -284,7 +284,11 @@ class CVRPActor(SAModel):
         c1_state_trunc = c1_state[:, :, :-2]  # shape: (batch_size, problem_dim, c-2)
         c2_state = torch.cat([base, c1_state_trunc], -1)  # shape: (batch_size, problem_dim, c*2-2)
         if cond_rank is not None:
-            c2_state = torch.cat([c2_state, cond_rank], -1)  # append conditional city-2 features
+            # Conditional features come from the problem's float32 distance matrices;
+            # match the (possibly lower-precision) state dtype before concatenating.
+            c2_state = torch.cat(
+                [c2_state, cond_rank.to(c2_state.dtype)], -1
+            )  # append conditional city-2 features
         return c2_state
 
 
@@ -418,6 +422,10 @@ class CVRPActorShared(SAModel):
     ) -> torch.Tensor:
         arange = torch.arange(h.size(0), device=h.device)
         h_c1 = h[arange, c1]  # shape: (batch_size, embed_dim)
+        # Conditional features come from the problem's float32 distance matrices;
+        # match the (possibly lower-precision) embedding dtype before concatenating.
+        if cond is not None:
+            cond = cond.to(h.dtype)
         if self.bilinear:
             q_in = h_c1 if g is None else torch.cat([h_c1, g], dim=-1)
             k_in = h if cond is None else torch.cat([h, cond], dim=-1)

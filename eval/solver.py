@@ -71,6 +71,12 @@ def build_actor(
         num_h_layers=HP["NUM_H_LAYERS"],
         update_method=HP["UPDATE_METHOD"],
         heuristic=HP["HEURISTIC"],
+        cond_rank=HP.get("COND_RANK", False),
+        cond_detour=HP.get("COND_DETOUR", False),
+        global_context=HP.get("GLOBAL_CONTEXT", False),
+        bilinear=HP.get("BILINEAR", False),
+        logit_clip=HP.get("LOGIT_CLIP", 0.0),
+        learnable_temp=HP.get("LEARNABLE_TEMP", False),
         seed=seed,
         device=device,
     )

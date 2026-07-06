@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any
 
 import torch
 
@@ -7,7 +7,7 @@ from problem import CVRP
 from sa import sa_test, sa_train
 
 
-def init_problem(config: dict, dim: int, n_problem: int) -> Tuple[CVRP, int]:
+def init_problem(config: dict, dim: int, n_problem: int) -> tuple[CVRP, int]:
     """Initialize the CVRP problem environment based on the provided configuration.
 
     Args:
@@ -40,10 +40,10 @@ def test_model(
     actor: SAModel,
     problem: CVRP,
     initial_solutions: torch.Tensor,
-    config: Dict,
+    config: dict,
     baseline: bool = False,
     greedy: bool = False,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Test the trained model performance using Simulated Annealing.
 
@@ -87,11 +87,11 @@ def inf_test_model(
     actor: SAModel,
     problem: CVRP,
     initial_solutions: torch.Tensor,
-    config: Dict,
+    config: dict,
     baseline: bool = False,
     greedy: bool = False,
     dtype: torch.dtype = torch.float32,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Test the trained model performance using Simulated Annealing with fast inference (less metrics etc..).
 
@@ -133,13 +133,13 @@ def inf_test_model(
 
 
 def initialize_test_problem(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     test_dim: int,
     n_test_problems: int,
     init_method: str,
     data: str = "nazari",
     device: str = "cpu",
-) -> Tuple[CVRP, torch.Tensor]:
+) -> tuple[CVRP, torch.Tensor]:
     """
     Initialize test problem instance with pre-generated data.
 
@@ -200,7 +200,7 @@ def initialize_models(
     entry: int,
     num_h_layers: int,
     update_method: str,
-    heuristic: Union[str, List[str]],
+    heuristic: str | list[str],
     seed: int = 0,
     device: str = "cpu",
     cond_rank: bool = False,
@@ -209,7 +209,7 @@ def initialize_models(
     bilinear: bool = False,
     logit_clip: float = 0.0,
     learnable_temp: bool = False,
-) -> Tuple[SAModel, Union[CVRPCritic, CVRPCriticDeepSets]]:
+) -> tuple[SAModel, CVRPCritic | CVRPCriticDeepSets]:
     """
     Initialize actor and critic neural networks.
 
