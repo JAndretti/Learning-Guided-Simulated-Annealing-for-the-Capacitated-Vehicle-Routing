@@ -619,13 +619,88 @@
   SEED: [0, 1, 2]
 
 
-# --- V3: actor network capacity (Table architecture_comp) -------------------
-#   Fixed so far (HP.yaml): operator + feasibility + feature set. Expect 32/1.
+# ============================================================================
+# V3: ACTOR ARCHITECTURE — sequential sub-protocol (capacity -> structure ->
+# shaping). Fixed so far (HP.yaml): operator + feasibility + feature set.
+# ============================================================================
+# The actor axes are swept in leverage order and each winner is baked into
+# HP.yaml before the next batch (same chain rule as V1-V8):
+#   V3a capacity (EMBEDDING_DIM x NUM_H_LAYERS on the current actor)
+#   V3b learned global context (flag A/B on the current actor)
+#   V3c shared node encoder + two heads, concat vs bilinear stage-2
+#   V3d logit clipping x learnable temperature (distribution shaping)
+# Judge every batch on test min_cost/Gain against the Batch-0 noise floor —
+# NOT on the PPO loss, which is not comparable across policy
+# parameterisations. V3d is additionally judged on Entropy / Average_KL.
+# All eval commands follow the standard pattern:
+#   uv run eval/run.py --dataset random --FOLDER <GROUP> --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+
+
+# --- V3a: actor network capacity (Table architecture_comp) ------------------
+#   Raw width/depth of the MLP scorers. Expect 32/1.
 #   -> bake winner into HP.yaml: EMBEDDING_DIM, NUM_H_LAYERS.
-#   EVAL: uv run eval/run.py --dataset random --FOLDER V3_arch --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
 # - GROUP: [V3_arch]
 #   EMBEDDING_DIM: [16, 32, 64]
 #   NUM_H_LAYERS: [1, 2]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V3b: learned global context (flag A/B on the current actor) ------------
+#   GLOBAL_CONTEXT concatenates a mean|max|std pooled instance summary g to
+#   the input of BOTH scoring stages (same pooling trick as the Deep-Sets
+#   critic), so every node's logit can depend on the whole instance — the
+#   cheapest fix for the actor's "no learned global context" weakness (one
+#   O(N*c) pooling op per SA step; no new structure).
+#   -> bake winner into HP.yaml: GLOBAL_CONTEXT.
+# - GROUP: [V3b_ctx]
+#   MODEL: [seq]
+#   GLOBAL_CONTEXT: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V3c: shared encoder + two heads; concat vs bilinear stage-2 -------------
+#   MODEL=shared encodes each node once (h_i) and scores both stages as heads
+#   over the shared embeddings; BILINEAR=true replaces the stage-2 concat head
+#   with a compatibility score q.k/sqrt(d) (single query-key product, no
+#   attention stack). BILINEAR is ignored by MODEL=seq.
+#   Two groups, identical key sets (launcher rule):
+#     * V3c_seq_ref: the incumbent actor, seed-paired reference — set its
+#       GLOBAL_CONTEXT to the V3b winner (it must match HP.yaml).
+#     * V3c_shared: the 2x2 {context} x {concat, bilinear} on the new actor.
+#   NOTE: if `shared` wins, re-run V3a on the winner before moving on —
+#   capacity now includes the encoder, so 32/1 may no longer be optimal.
+#   -> bake winners into HP.yaml: MODEL, GLOBAL_CONTEXT, BILINEAR.
+# - GROUP: [V3c_seq_ref]
+#   MODEL: [seq]
+#   GLOBAL_CONTEXT: [true]      # <-- FIX from V3b
+#   BILINEAR: [false]           # ignored by seq
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V3c_shared]
+#   MODEL: [shared]
+#   GLOBAL_CONTEXT: [false, true]
+#   BILINEAR: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+
+
+# --- V3d: logit clipping x learnable temperature (distribution shaping) ------
+#   Inherits the winning actor from HP.yaml. These flags add no capacity —
+#   they tame the sampling distribution: LOGIT_CLIP bounds logits to C*tanh(l)
+#   so the softmax cannot collapse to a near-deterministic choice (0 disables;
+#   10 = Kool et al.); LEARNABLE_TEMP divides logits by a trainable
+#   tau=exp(theta), one per stage. Judge on Entropy (should stop collapsing)
+#   and Average_KL (should stop spiking) IN ADDITION to test min_cost.
+#   -> bake winners into HP.yaml: LOGIT_CLIP, LEARNABLE_TEMP.
+# - GROUP: [V3d_stab]
+#   LOGIT_CLIP: [0.0, 10.0]
+#   LEARNABLE_TEMP: [false, true]
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
