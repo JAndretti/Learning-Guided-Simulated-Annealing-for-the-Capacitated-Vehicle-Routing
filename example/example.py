@@ -1,15 +1,16 @@
+import glob
 import os
 import random
 import sys
 
-import glob2
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
 from rich import print
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+EXAMPLE_DIR = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(os.path.abspath(os.path.join(EXAMPLE_DIR, "..", "src")))
 from model import CVRPActor
 from problem import CVRP
 from sa import sa_train
@@ -27,16 +28,17 @@ if __name__ == "__main__":
     set_seed(1)
 
     cfg = {
-        "PROBLEM_DIM": 50,
-        "N_PROBLEMS": 10,
+        "PROBLEM_DIM": 100,
+        "N_PROBLEMS": 1,
         "OUTER_STEPS": 10000,
-        "DEVICE": (
-            "cuda"
-            if torch.cuda.is_available()
-            else "mps"
-            if torch.backends.mps.is_available()
-            else "cpu"
-        ),
+        # "DEVICE": (
+        #     "cuda"
+        #     if torch.cuda.is_available()
+        #     else "mps"
+        #     if torch.backends.mps.is_available()
+        #     else "cpu"
+        # ),
+        "DEVICE": "cpu",
         "SEED": 1,
         "LOAD_PB": True,
         "INIT": "random",
@@ -48,19 +50,18 @@ if __name__ == "__main__":
     LOAD = {50: 40, 100: 50}
     cfg["MAX_LOAD"] = LOAD[cfg["PROBLEM_DIM"]]
 
-    model_path = glob2.glob("example/models/*")[0]
+    model_path = sorted(glob.glob(os.path.join(EXAMPLE_DIR, "models", "*")))[0]
 
-    # get HP model
+    # Load the config saved alongside the checkpoint. It is serialized as an
+    # `_HP` singleton (`!!python/object:setup.HP._HP`) with the actual settings
+    # nested under a `config:` key. Strip the tag and pull out the flat dict.
     hp_file = os.path.join(model_path, "HP.yaml")
-    with open(hp_file, "r") as file:
-        content = file.read()
-        content_clean = content.replace("!!python/object:HP._HP", "")
-        hp_data = yaml.unsafe_load(content_clean)
+    with open(hp_file) as file:
+        content = file.read().replace("!!python/object:setup.HP._HP", "")
+        hp_data = yaml.safe_load(content)["config"]
 
     # generate data
-    coords = torch.rand(
-        cfg["N_PROBLEMS"], cfg["PROBLEM_DIM"] + 1, 2, device=cfg["DEVICE"]
-    )
+    coords = torch.rand(cfg["N_PROBLEMS"], cfg["PROBLEM_DIM"] + 1, 2, device=cfg["DEVICE"])
     demands = torch.randint(
         1, 10, (cfg["N_PROBLEMS"], cfg["PROBLEM_DIM"] + 1), device=cfg["DEVICE"]
     )
@@ -83,21 +84,23 @@ if __name__ == "__main__":
 
     problem.generate_params(coords, demands, capacity)
 
-    # get model
+    # get model (mirror the construction in src/init.py / src/main.py)
     actor = CVRPActor(
         embed_dim=hp_data["EMBEDDING_DIM"],
         c=input_dim,
         num_hidden_layers=hp_data["NUM_H_LAYERS"],
         device=cfg["DEVICE"],
-        mixed_heuristic=False,
         method=hp_data["UPDATE_METHOD"],
+        cond_rank=hp_data.get("COND_RANK", False),
+        cond_detour=hp_data.get("COND_DETOUR", False),
+        global_context=hp_data.get("GLOBAL_CONTEXT", False),
+        logit_clip=hp_data.get("LOGIT_CLIP", 0.0),
+        learnable_temp=hp_data.get("LEARNABLE_TEMP", False),
     )
+    checkpoint = sorted(glob.glob(os.path.join(model_path, "*.pt")))[0]
     actor.load_state_dict(
         torch.load(
-            os.path.join(
-                model_path,
-                "LGSA_CRITIC_actor_epoch_180_loss_18.121649.pt",
-            ),
+            checkpoint,
             map_location=torch.device("cpu"),
             weights_only=True,
         )
@@ -125,8 +128,8 @@ if __name__ == "__main__":
     )
 
     # Save initial plots
-    if not os.path.exists("example/plots"):
-        os.makedirs("example/plots")
+    plots_dir = os.path.join(EXAMPLE_DIR, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
 
     data_init, sol_init = prepare_plot(problem, init_x)
     data_init_n, sol_init_n = prepare_plot(problem, init_nearest_neighbor)
@@ -148,9 +151,9 @@ if __name__ == "__main__":
             instance_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="Initial Solution for Instance {} / ".format(i + 1),
+            title=f"Initial Solution for Instance {i + 1} / ",
         )
-        plt.savefig(f"example/plots/instance_{i + 1}_init.png")
+        plt.savefig(os.path.join(plots_dir, f"instance_{i + 1}_init.png"))
         plt.close()
         instance_nearest_sol = sol_init_n[i]
         fig, ax1 = plt.subplots(figsize=(10, 10))
@@ -159,9 +162,9 @@ if __name__ == "__main__":
             instance_nearest_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="Solution with Nearest Neighbor for Instance {} / ".format(i + 1),
+            title=f"Solution with Nearest Neighbor for Instance {i + 1} / ",
         )
-        plt.savefig(f"example/plots/instance_{i + 1}_init_nearest.png")
+        plt.savefig(os.path.join(plots_dir, f"instance_{i + 1}_init_nearest.png"))
         plt.close()
         instance_CW_sol = sol_init_CW[i]
         fig, ax1 = plt.subplots(figsize=(10, 10))
@@ -170,15 +173,16 @@ if __name__ == "__main__":
             instance_CW_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="Solution with Clark and Wright for Instance {} / ".format(i + 1),
+            title=f"Solution with Clark and Wright for Instance {i + 1} / ",
         )
-        plt.savefig(f"example/plots/instance_{i + 1}_init_CW.png")
+        plt.savefig(os.path.join(plots_dir, f"instance_{i + 1}_init_CW.png"))
         plt.close()
 
     with torch.no_grad():
         cfg["TEST_OUTER_STEPS"] = cfg["OUTER_STEPS"]
         init_x = problem.generate_init_state(cfg["INIT"], False)
-        res = sa_train(
+        # sa_train returns (results_td, results_extra); we only need the TensorDict.
+        res, _ = sa_train(
             actor,
             problem,
             init_x,
@@ -216,8 +220,8 @@ if __name__ == "__main__":
             instance_sol,
             ax1=ax1,
             capacity=cfg["MAX_LOAD"],
-            title="LGSA Solution for Instance {} / ".format(i + 1),
+            title=f"LGSA Solution for Instance {i + 1} / ",
         )
-        plt.savefig(f"example/plots/instance_{i + 1}.png")
+        plt.savefig(os.path.join(plots_dir, f"instance_{i + 1}.png"))
         plt.close()
-    print("All plots saved in example/plots/")
+    print(f"All plots saved in {plots_dir}/")

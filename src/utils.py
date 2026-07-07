@@ -169,11 +169,13 @@ def discrete_cmap(N, base_cmap=None):
 
 
 def prepare_plot(pb, init):
-    depot = pb.coords[:, 0, :].squeeze().cpu()
-    loc = pb.coords[:, 1:, :].squeeze().cpu()
-    demand = pb.demands[:, 1:].squeeze().cpu()
+    # Keep the batch dimension so callers can index per-instance (data["depot"][i],
+    # init[i]). squeeze() here would collapse the batch dim when n_problems == 1.
+    depot = pb.coords[:, 0, :].cpu()
+    loc = pb.coords[:, 1:, :].cpu()
+    demand = pb.demands[:, 1:].cpu()
     data = {"depot": depot, "loc": loc, "demand": demand}
-    init = init.squeeze().cpu()
+    init = init.cpu()
     return data, init
 
 
