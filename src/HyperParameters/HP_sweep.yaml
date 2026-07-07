@@ -640,7 +640,7 @@
 #   -> bake winner into HP.yaml: CRITIC.
 - GROUP: [V3_critic]
   MODEL: [seq]
-  CRITIC_MODEL: [deep_sets]
+  CRITIC_MODEL: [deepsets]
   PPO_EPOCHS: [3]
   CL: [false]
   SEED: [0, 1, 2]
