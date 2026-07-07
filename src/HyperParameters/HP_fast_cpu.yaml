@@ -1,0 +1,117 @@
+# =====================================================================
+# CONFIG "FAST CPU" — pour entraîner rapidement sur un ordinateur portable (CPU).
+#
+# Cette config reprend TOUS les paramètres de HP.yaml, mais réduit ceux qui
+# pèsent sur la durée d'entraînement (taille du problème, nb d'instances,
+# nb d'epochs, pas de RS, PPO, curriculum, tests). Le but est de voir la boucle
+# tourner et le modèle commencer à apprendre en quelques minutes, PAS d'obtenir
+# un modèle performant.
+#
+# Lancer :
+#  copier l'intégralité de ce fichier dans HP.yaml, puis exécuter :
+#  uv run src/main.py
+#
+# Les lignes marquées "# FAST (défaut: X)" indiquent la valeur d'origine.
+# =====================================================================
+
+# =============== Project & Logging ===============
+PROJECT: "LG-SA" # Project name
+GROUP: "" # Experimentation group
+COMMENT: "fast_cpu"
+LOG: False # FAST (défaut: True) — pas de WandB, aucun compte requis
+VERBOSE: False # Verbose output during training
+
+# =============== Hardware & Setup ===============
+DEVICE: "cpu" # FAST (défaut: "cuda") — entraînement sur CPU
+SEED: 42 # Random seed for reproducibility
+
+# =============== CVRP Problem ===============
+PROBLEM_DIM: 50 # FAST (défaut: 100) — instances plus petites
+MAX_LOAD: 40 # FAST (défaut: 50) — capacité adaptée à DIM=50
+N_PROBLEMS: 64 # FAST (défaut: 1024) — moins d'instances en parallèle
+DATA: "random" # Type of data: random or uchoa
+
+# =============== Heuristic & Initial Solution ===============
+HEURISTIC: "insertion" # Local search method (insertion, swap, two_opt)
+
+UPDATE_METHOD: "valid" # Update method after heuristi (rm_depot, free, valid)
+INIT: "random" # Initial solution method
+MULTI_INIT: False # Use multiple initial solutions
+MULTI_INIT_STEP: 0 # Step where all initial solutions are used
+INIT_LIST: ["isolate", "random", "sweep", "nearest_neighbor"] # List of initial solution methods
+
+# =============== Reward ===============
+
+REWARD: "immediate" # Reward calculation method (immediate, sa_aligned, terminal, global_best, step_penalty_init, step_penalty_16, hybrid, curriculum, curriculum_terminal)
+HYBRID_ALPHA: 0.5 # Weight for immediate reward in hybrid mode (0.0 to 1.0)
+NORMALIZE_REWARD: False # Normalize reward to have mean 0 and std 1
+
+# =============== Features ===============
+features:
+  static: True          # coords, angles, depot info
+  topology: True        # prev/next neighbors
+  neighbor_rank: True  # distance-rank of prev/next neighbors (2 dims)
+  demand_max: True     # demand / largest demand in instance
+  density5: True       # mean distance to 5 nearest neighbors
+  density10%: True      # mean distance to 10% nearest neighbors
+  density33%: True      # mean distance to 33% nearest neighbors
+  detour: True          # detour
+  centroid: True        # route centroid
+  route_pct: True       # load of the route
+  slack: True          # remaining load of the route
+  node_pct: True       # node demand percentage with route capacity
+  meta: True            # temp, time
+
+# =============== Model Architecture ===============
+MODEL: "seq" # Model type: seq (independent MLP scorers) or shared (shared node encoder + two heads)
+GLOBAL_CONTEXT: False # Concat a mean|max|std pooled instance summary to both stages' inputs (seq: raw features, shared: embeddings)
+BILINEAR: False # Stage-2 scorer as bilinear compatibility q.k/sqrt(d) instead of concat head (shared actor only)
+LOGIT_CLIP: 0.0 # 0 disables; >0 applies C*tanh(logits) clipping before softmax (Kool et al., C~10)
+LEARNABLE_TEMP: False # Learnable softmax temperature tau=exp(theta), one per stage
+COND_RANK: False # Condition city-2 selection on the bidirectional distance-rank to city-1 (seq/shared actors)
+COND_DETOUR: False # Condition city-2 selection on insertion cost of city-1 after the candidate: insert_cost + net_delta (seq/shared actors, insertion only)
+CRITIC_MODEL: "ff" # Critic model type: ff, deepsets
+EMBEDDING_DIM: 32 # Embedding dimension for MLP scorer hidden layers
+NUM_H_LAYERS: 1 # Number of hidden layers in MLP components
+
+# =============== Training ===============
+N_EPOCHS: 50 # FAST (défaut: 10000) — juste assez pour voir l'apprentissage démarrer
+LR_ACTOR: 0.001 # Learning rate
+LR_CRITIC: 0.001 # Learning rate
+WEIGHT_DECAY: 0.001 # L2 regularization
+BATCH_SIZE: 256  # FAST (défaut: 2048) — cohérent avec 64 x 50 = 3200 transitions
+
+# =============== Simulated Annealing ===============
+INIT_TEMP: 1 # Initial temperature
+STOP_TEMP: 0.1 # Final temperature (to low tend to bad learning bcs rejection)
+OUTER_STEPS: 50 # FAST (défaut: 100) — épisodes de RS plus courts
+SCHEDULER: "lam" # Cooling schedule type
+METROPOLIS: True # Use Metropolis criterion
+
+# =============== PPO Algorithm ===============
+METHOD: "ppo" # Training algorithm used
+PPO_EPOCHS: 1 # FAST (défaut: 15) — une seule passe d'optimisation par epoch
+TRACE_DECAY: 0.99 # Lambda parameter for GAE
+EPS_CLIP: 0.25 # Policy clipping range
+LOSS: "min_cost" # Optimization objective
+GAMMA: 0.99 # Discount factor
+ENT_COEF: 0.01 # Entropy coefficient
+TARGET_KL: 0.03 # Target KL divergence
+BETA_KL: 1.0 # KL penalty coefficient
+GP_LAMBDA: 0.01 # Gradient penalty weight
+
+# =============== Curriculum ===============
+CL : False # FAST (défaut: True) — désactive la phase de warmup curriculum par epoch
+MAX_PROB_STEP: 1000 # Step to calcul the curriculum step
+MAX_OUTER_STEPS_CL: 500 # Max outer steps for curriculum learning (pre steps)
+STEEP_SIG: 0.01 # Steepness of the sigmoid function for curriculum learning
+CL_TYPE: "sig" # Curriculum learning schedule type: sig or lin
+CL_RANDOM_DEPTH: False # If True, warm each instance to its own depth d_i ~ U{0..t_init} instead of all to t_init
+EARLY_STOP_AFTER: 0 # Epoch after which early stopping may trigger under CL; 0 -> follow MAX_PROB_STEP
+
+# =============== Testing during training ===============
+TEST_DIMENSION: 50 # FAST (défaut: 100) — teste sur DIM=50 (fichier gen_nazari_50.pt requis)
+TEST_NB_PROBLEMS: 100 # FAST (défaut: 1000) — évaluation périodique plus légère
+TEST_OUTER_STEPS: 200 # FAST (défaut: 1000) — évaluation périodique plus légère
+NAZARI: True # Use Nazari et al. (2018) initial solution for testing
+TEST_INIT: "random"
