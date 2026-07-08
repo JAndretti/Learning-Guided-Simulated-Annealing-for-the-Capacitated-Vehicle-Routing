@@ -54,7 +54,7 @@ LOGIT_CLIP: 0.0 # 0 disables; >0 applies C*tanh(logits) clipping before softmax 
 LEARNABLE_TEMP: False # Learnable softmax temperature tau=exp(theta), one per stage
 COND_RANK: False # Condition city-2 selection on the bidirectional distance-rank to city-1 (seq/shared actors)
 COND_DETOUR: False # Condition city-2 selection on insertion cost of city-1 after the candidate: insert_cost + net_delta (seq/shared actors, insertion only)
-CRITIC_MODEL: "ff" # Critic model type: ff, deepsets
+CRITIC_MODEL: "deepsets" # Critic model type: ff, deepsets
 EMBEDDING_DIM: 32 # Embedding dimension for MLP scorer hidden layers
 NUM_H_LAYERS: 1 # Number of hidden layers in MLP components
 
