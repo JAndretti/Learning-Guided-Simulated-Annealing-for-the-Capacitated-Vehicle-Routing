@@ -63,9 +63,7 @@ class CVRPActor(SAModel):
         self.c1_state_dim = c + ctx
         # Features for city 2 include city 1's features -2 to not include meta features twice, resulting in c + c - 2.
         # +4 when cond_rank is on (edge ranks), +2 when cond_detour is on (insertion cost).
-        self.c2_state_dim = (
-            c * 2 - 2 + (4 if cond_rank else 0) + (2 if cond_detour else 0) + ctx
-        )
+        self.c2_state_dim = c * 2 - 2 + (4 if cond_rank else 0) + (2 if cond_detour else 0) + ctx
 
         self.city1_net = build_mlp(self.c1_state_dim, embed_dim, num_hidden_layers, device)
         self.city2_net = build_mlp(self.c2_state_dim, embed_dim, num_hidden_layers, device)
@@ -352,9 +350,7 @@ class CVRPActorShared(SAModel):
         ctx = 3 * embed_dim if global_context else 0
         self.scale = embed_dim**-0.5
 
-        self.node_encoder = build_mlp(
-            c, embed_dim, num_hidden_layers, device, output_dim=embed_dim
-        )
+        self.node_encoder = build_mlp(c, embed_dim, num_hidden_layers, device, output_dim=embed_dim)
         self.c1_head = build_mlp(embed_dim + ctx, embed_dim, num_hidden_layers, device)
         if bilinear:
             self.q_proj = nn.Linear(embed_dim + ctx, embed_dim, bias=False, device=device)

@@ -687,21 +687,21 @@
 #   NOTE: if `shared` wins, re-run V3a on the winner before moving on —
 #   capacity now includes the encoder, so 32/1 may no longer be optimal.
 #   -> bake winners into HP.yaml: MODEL, GLOBAL_CONTEXT, BILINEAR.
-- GROUP: [V3c_seq_ref]
-  MODEL: [seq]
-  GLOBAL_CONTEXT: [False]      # <-- FIX from V3b
-  BILINEAR: [false]           # ignored by seq
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V3c_seq_ref]
+#   MODEL: [seq]
+#   GLOBAL_CONTEXT: [False]      # <-- FIX from V3b
+#   BILINEAR: [false]           # ignored by seq
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
-- GROUP: [V3c_shared]
-  MODEL: [shared]
-  GLOBAL_CONTEXT: [false, true]
-  BILINEAR: [false, true]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V3c_shared]
+#   MODEL: [shared]
+#   GLOBAL_CONTEXT: [false, true]
+#   BILINEAR: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V3d: logit clipping x learnable temperature (distribution shaping) ------
@@ -712,12 +712,12 @@
 #   tau=exp(theta), one per stage. Judge on Entropy (should stop collapsing)
 #   and Average_KL (should stop spiking) IN ADDITION to test min_cost.
 #   -> bake winners into HP.yaml: LOGIT_CLIP, LEARNABLE_TEMP.
-# - GROUP: [V3d_stab]
-#   LOGIT_CLIP: [0.0, 10.0]
-#   LEARNABLE_TEMP: [false, true]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V3d_stab]
+  LOGIT_CLIP: [0.0, 10.0]
+  LEARNABLE_TEMP: [false, true]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V5: reward formulation (Table reward_formulations) ----------------------
