@@ -50,7 +50,7 @@ features:
 MODEL: "seq" # Model type: seq (independent MLP scorers) or shared (shared node encoder + two heads)
 GLOBAL_CONTEXT: False # Concat a mean|max|std pooled instance summary to both stages' inputs (seq: raw features, shared: embeddings)
 BILINEAR: False # Stage-2 scorer as bilinear compatibility q.k/sqrt(d) instead of concat head (shared actor only)
-LOGIT_CLIP: 0.0 # 0 disables; >0 applies C*tanh(logits) clipping before softmax (Kool et al., C~10)
+LOGIT_CLIP: 10.0 # 0 disables; >0 applies C*tanh(logits) clipping before softmax (Kool et al., C~10)
 LEARNABLE_TEMP: False # Learnable softmax temperature tau=exp(theta), one per stage
 COND_RANK: False # Condition city-2 selection on the bidirectional distance-rank to city-1 (seq/shared actors)
 COND_DETOUR: False # Condition city-2 selection on insertion cost of city-1 after the candidate: insert_cost + net_delta (seq/shared actors, insertion only)

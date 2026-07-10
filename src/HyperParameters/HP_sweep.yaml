@@ -712,34 +712,38 @@
 #   tau=exp(theta), one per stage. Judge on Entropy (should stop collapsing)
 #   and Average_KL (should stop spiking) IN ADDITION to test min_cost.
 #   -> bake winners into HP.yaml: LOGIT_CLIP, LEARNABLE_TEMP.
-- GROUP: [V3d_stab]
-  LOGIT_CLIP: [0.0, 10.0]
-  LEARNABLE_TEMP: [false, true]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V3d_stab]
+#   LOGIT_CLIP: [0.0, 10.0]
+#   LEARNABLE_TEMP: [false, true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V5: reward formulation (Table reward_formulations) ----------------------
 #   Fixed so far (HP.yaml): + critic. Expect immediate; step_penalty_* collapse.
 #   -> bake winner into HP.yaml: REWARD.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V5_reward --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V5_reward]
-#   REWARD: [immediate, sa_aligned, global_best, terminal, hybrid, curriculum, curriculum_terminal, step_penalty_init, step_penalty_16]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V5_reward]
+  REWARD: [immediate, sa_aligned, global_best, terminal, hybrid, curriculum, curriculum_terminal, step_penalty_init, step_penalty_16]
+  SCHEDULER: [lam]
+  METROPOLIS: [true]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V6: temperature schedule (Table temp_scheduling) -----------------------
 #   Fixed so far (HP.yaml): + reward. Expect lam (exponential).
 #   -> bake winner into HP.yaml: SCHEDULER.   (lam=exponential, step=step decay; CONFIRM)
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V6_sched --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V6_sched]
-#   SCHEDULER: [lam, step]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V6_sched]
+  SCHEDULER: [lam, step]
+  METROPOLIS: [true]
+  REWARD: [immediate]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V7: Metropolis criterion at TRAIN time (Table metropolis_ablation) -----
@@ -748,11 +752,13 @@
 #   -> bake winner into HP.yaml: METROPOLIS.
 #   EVAL (test=Metropolis): uv run eval/run.py --dataset random --FOLDER V7_metro --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
 #   EVAL (test=Descent):    ... --FOLDER V7_metro ... --no-metro
-# - GROUP: [V7_metro]
-#   METROPOLIS: [true, false]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V7_metro]
+  SCHEDULER: [lam]
+  REWARD: [immediate]
+  METROPOLIS: [true, false]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V8: initialization strategy (Table init_generalization) ----------------
