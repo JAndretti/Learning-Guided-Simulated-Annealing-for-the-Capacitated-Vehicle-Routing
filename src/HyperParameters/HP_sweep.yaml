@@ -768,18 +768,18 @@
 #   EVAL (per train folder, per test init):
 #     uv run eval/run.py --dataset random --FOLDER V8_init_single --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline --INIT random
 #     (repeat with --INIT sweep | nearest_neighbor | isolate; and --FOLDER V8_init_multi)
-- GROUP: [V8_init_single]
-  INIT: [random, sweep, nearest_neighbor, isolate]
-  MULTI_INIT: [false]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
-- GROUP: [V8_init_multi]
-  INIT: [random]                # ignored when MULTI_INIT=true (uses INIT_LIST)
-  MULTI_INIT: [true]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [V8_init_single]
+#   INIT: [random, sweep, nearest_neighbor, isolate]
+#   MULTI_INIT: [false]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
+# - GROUP: [V8_init_multi]
+#   INIT: [random]                # ignored when MULTI_INIT=true (uses INIT_LIST)
+#   MULTI_INIT: [true]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- X1: learning rate (LR_ACTOR / LR_CRITIC) -------------------------------
@@ -787,12 +787,12 @@
 #   paper never sweeps; tune it here, on the fixed architecture, before curriculum.
 #   -> bake winner into HP.yaml: LR_ACTOR, LR_CRITIC.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER X1_lr --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [X1_lr]
-#   LR_ACTOR: [0.0003, 0.001, 0.003]
-#   LR_CRITIC: [0.0003, 0.001, 0.003]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [X1_lr]
+  LR_ACTOR: [0.0003, 0.001, 0.003]
+  LR_CRITIC: [0.0003, 0.001, 0.003]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- X2: PPO exploration (entropy coefficient) ------------------------------

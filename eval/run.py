@@ -2,17 +2,18 @@ import argparse
 import importlib
 import os
 import sys
+
 import torch
 
 # Ensure the eval/ directory is on sys.path so handler modules resolve correctly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 HANDLERS: dict[str, str] = {
-    "random":  "handler_random",
-    "X":       "handler_X",
+    "random": "handler_random",
+    "X": "handler_X",
     "X_batch": "handler_X_batch",
-    "XL":      "handler_XL",
-    "XML":     "handler_XML",
+    "XL": "handler_XL",
+    "XML": "handler_XML",
 }
 
 # --- Pass 1: extract --dataset before full parse (optional so --help works) ---
@@ -26,9 +27,7 @@ handler = importlib.import_module(HANDLERS[pre_args.dataset]) if pre_args.datase
 parser = argparse.ArgumentParser(
     description="LGSA Evaluation — single entry point for all benchmarks"
 )
-parser.add_argument(
-    "--dataset", required=True, choices=HANDLERS.keys(), help="Benchmark dataset"
-)
+parser.add_argument("--dataset", required=True, choices=HANDLERS.keys(), help="Benchmark dataset")
 parser.add_argument("--FOLDER", type=str, default="BEST", help="Model folder under wandb/LGSA/")
 parser.add_argument(
     "--INIT",
@@ -42,8 +41,10 @@ parser.add_argument(
     "--device",
     type=str,
     default=(
-        "cuda" if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available()
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
         else "cpu"
     ),
 )
