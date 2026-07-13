@@ -91,6 +91,9 @@ MAX_OUTER_STEPS_CL: 500 # Max outer steps for curriculum learning (pre steps)
 STEEP_SIG: 0.01 # Steepness of the sigmoid function for curriculum learning
 CL_TYPE: "sig" # Curriculum learning schedule type: sig or lin
 CL_RANDOM_DEPTH: False # If True, warm each instance to its own depth d_i ~ U{0..t_init} instead of all to t_init
+CL_MODE: "warmup" # Curriculum mechanism: "warmup" = pre-improvement phase before collection (original); "chain" = persistent chains (instances + best solutions persist across epochs, no warmup)
+CHAIN_REFRESH: 0.1 # chain mode: fraction of chains replaced by fresh instances each epoch (mean chain age = 1/rho epochs)
+CHAIN_MAX_AGE: 0 # chain mode: force-refresh chains older than this many epochs (0 = disabled)
 EARLY_STOP_AFTER: 0 # Epoch after which early stopping may trigger under CL; 0 -> follow MAX_PROB_STEP
 
 # =============== Testing during training ===============

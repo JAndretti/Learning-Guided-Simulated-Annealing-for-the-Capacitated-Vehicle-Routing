@@ -1,262 +1,205 @@
 # src/HyperParameters/HP_sweep.yaml
 # ============================================================================
-# CURRICULUM-LEARNING EVALUATION PROTOCOL (from scratch)
+# Q PROTOCOL — CURRICULUM REDESIGN (replaces the old P0-P9 study)
 # ============================================================================
-# Goal: evaluate the curriculum parameters for the paper, assuming NOTHING has
-# been measured yet. Full factorial over {CL_TYPE, MAX_OUTER_STEPS_CL,
-# MAX_PROB_STEP, STEEP_SIG} x seeds is too expensive, so this is a SEQUENTIAL
-# (coordinate-descent) protocol: each batch fixes the winner of the previous
-# one. This is greedy and assumes the parameters are roughly separable; the
-# sensitivity batches (3-5) and the final confirmation batch (7) guard against
-# that assumption being wrong.
+# The old P* result folders were deleted from res/ and the frozen config has
+# changed since the P batches ran (V1-V8 winners baked into HP.yaml), so every
+# P number is stale. A fresh baseline is mandatory; all curriculum results for
+# the paper come from the Q batches below (PAPER_GUIDE.md §10).
 #
-# HOW TO RUN
-#   * Exactly ONE batch is uncommented at a time (Batch 0 below is active).
+# WHY A REDESIGN — three flaws in the old warmup curriculum:
+#   (1) OVER-PARAMETERIZED: 4 coupled knobs (CL_TYPE, MAX_OUTER_STEPS_CL,
+#       MAX_PROB_STEP, STEEP_SIG) tuned by coordinate descent on what P8
+#       showed to be a plateau — most of that sweep bought nothing.
+#   (2) DISCARDED COMPUTE: the warmup runs full SA (sampling + Metropolis,
+#       compressed schedule) but stores NO transitions; at xi=500 vs
+#       OUTER_STEPS=100, >80% of all SA steps produced no gradient signal.
+#   (3) NO DEPTH COVERAGE: every instance warmed to the SAME depth t_init, so
+#       one gradient batch only ever sees a narrow band of the cost spectrum
+#       (P9's hypothesis, never tested).
+#
+# THREE MECHANISMS COMPARED:
+#   A. WARMUP RAMP (Q1) — the old mechanism re-validated under the new frozen
+#      config: CL_MODE=warmup, CL_RANDOM_DEPTH=false, ramp knobs active.
+#   B. STOCHASTIC DEPTH (Q2) — warmup with per-instance depth d_i ~ U{0..xi}
+#      and NO ramp (CL_TYPE=lin + MAX_PROB_STEP=1 -> t_init=xi from epoch 1).
+#      ONE knob (xi). Fixes flaw (3); mean warmup cost xi/2 steps/epoch.
+#   C. PERSISTENT CHAINS (Q3) — CL_MODE=chain: instances + best solutions
+#      persist across epochs and search RESUMES from them; a fraction
+#      CHAIN_REFRESH=rho of chains is replaced by fresh instances each epoch.
+#      Geometric age distribution -> mean resume depth = OUTER_STEPS/rho SA
+#      steps (rho 0.05/0.1/0.2 -> 2000/1000/500 at OUTER_STEPS=100), and every
+#      batch mixes fresh and deep instances (coverage for free). ZERO warmup
+#      compute. ONE knob (rho). Fixes flaws (1)-(3).
+#
+# HOW TO RUN (unchanged)
+#   * Exactly ONE batch uncommented at a time (Q0 below is ACTIVE).
 #   * LAUNCHER RULE: every uncommented group must list the EXACT same keys.
-#   * After a batch finishes, evaluate its checkpoints (eval/run.py) and pick
-#     the lowest MEAN final_cost across seeds; write that value into the
-#     "<-- FIX from Batch N" placeholders of the next batch, then uncomment it.
+#     All Q batches share one key set on purpose: CL, CL_MODE, CL_TYPE,
+#     MAX_OUTER_STEPS_CL, MAX_PROB_STEP, STEEP_SIG, CL_RANDOM_DEPTH,
+#     CHAIN_REFRESH, EARLY_STOP_AFTER, TEST_OUTER_STEPS, PPO_EPOCHS, SEED.
+#   * After a batch: evaluate, pick the lowest MEAN final cost across seeds,
+#     write it into the "<-- FIX from QN" placeholders of the next batch.
+#     EVAL (per GROUP): uv run eval/run.py --dataset random --FOLDER <GROUP> \
+#         --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
 #
-# CONVENTIONS (held constant unless a batch is sweeping them)
-#   PPO_EPOCHS: 5            (matches the production setting)
-#   TEST_OUTER_STEPS: 5000   (pinned -> avoids the model-selection confound)
-#   N_EPOCHS: HP.yaml default (1000)
-#   Significance: trust a difference only if mean gap > ~1e-2 routing units
-#     (the run-to-run noise floor measured in Batch 0).
-#   Seeds: exploratory batches use 3 seeds; gate/confirmation use 5.
+# CONVENTIONS (held constant)
+#   PPO_EPOCHS: 3. TEST_OUTER_STEPS: 5000 (pinned -> no model-selection
+#   confound). EARLY_STOP_AFTER: 1000 for every CL arm, so no arm can
+#   early-stop before epoch 1000 -> comparable training lengths regardless of
+#   MAX_PROB_STEP (with CL=false the gate is inactive, as in the old P0).
+#   Seeds: 3 exploratory, 5 for baseline/confirmation. Noise floor = pooled
+#   seed-to-seed std of THIS protocol's stable arms (per-batch convention —
+#   do NOT reuse any P-era floor).
+#   DECISION RULE: mean final cost vs the Q0 floor, seed-paired. Ties below
+#   the floor -> prefer fewer knobs and less compute (chain < depth < ramp).
 # ============================================================================
 
 
-# --- BATCH 0 (ACTIVE): baseline + noise floor -------------------------------
-#   Run the no-CL baseline across seeds. Read: baseline mean +/- std. The std
-#   here IS your empirical significance threshold for every later comparison.
-# - GROUP: [P0_baseline]
+# --- Q0 (ACTIVE): baseline + fresh noise floor -------------------------------
+#   No-CL baseline, 5 seeds, under the CURRENT frozen config. Its pooled std is
+#   the significance threshold for every later Q comparison. All CL keys below
+#   are ignored when CL=false; they are listed for the launcher rule only.
+# - GROUP: [Q0_baseline]
 #   CL: [false]
-#   CL_TYPE: [sig]              # ignored when CL=false
-#   MAX_OUTER_STEPS_CL: [500]   # ignored
+#   CL_MODE: [warmup]           # ignored when CL=false
+#   CL_TYPE: [sig]              # ignored
+#   MAX_OUTER_STEPS_CL: [250]   # ignored
 #   MAX_PROB_STEP: [1000]       # ignored
 #   STEEP_SIG: [0.01]           # ignored
+#   CL_RANDOM_DEPTH: [false]    # ignored
+#   CHAIN_REFRESH: [0.1]        # ignored
+#   EARLY_STOP_AFTER: [1000]    # ignored (gate inactive when CL=false)
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2, 3, 4]
 
 
-# --- BATCH 1: does curriculum help at all? (go / no-go gate) -----------------
-#   CL on (neutral mid-range config) vs off, paired by seed. If CL does not beat
-#   Batch 0 by more than the noise floor, stop here and report a null result.
-# - GROUP: [P1_CL]
+# --- Q1: mechanism A — old warmup-ramp winner, re-validated -------------------
+#   The P7 winner (sig, xi=250, E=2000, kappa=0.01) rerun under the new frozen
+#   config, 5 seeds, seed-paired vs Q0. This is the incumbent the redesign has
+#   to beat; if even the old winner no longer clears the Q0 floor, the warmup
+#   mechanism itself is a null under the new config.
+# - GROUP: [Q1_warmup_ramp]
 #   CL: [true]
+#   CL_MODE: [warmup]
 #   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [500]
-#   MAX_PROB_STEP: [1000]
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
 #   STEEP_SIG: [0.01]
+#   CL_RANDOM_DEPTH: [false]
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   EARLY_STOP_AFTER: [1000]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2, 3, 4]
 
 
-# --- BATCH 2: schedule shape — sigmoid vs linear ----------------------------
-#   Fix a mid-range warmup; compare the two schedules. Winner -> CL_TYPE below.
-# - GROUP: [P2_sig]
+# --- Q2: mechanism B — stochastic warmup depth, no ramp -----------------------
+#   d_i ~ U{0..xi} per instance; CL_TYPE=lin + MAX_PROB_STEP=1 kill the ramp
+#   (t_init=xi from epoch 1), so xi is the ONLY knob. Sweep it. Mean warmup
+#   compute is xi/2 steps/epoch (vs xi for the same arm without random depth).
+# - GROUP: [Q2_depth]
 #   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [500]
-#   MAX_PROB_STEP: [1000]
-#   STEEP_SIG: [0.01]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
-# - GROUP: [P2_lin]
-#   CL: [true]
+#   CL_MODE: [warmup]
 #   CL_TYPE: [lin]
-#   MAX_OUTER_STEPS_CL: [500]
-#   MAX_PROB_STEP: [1000]
+#   MAX_OUTER_STEPS_CL: [250, 500, 1000]
+#   MAX_PROB_STEP: [1]          # no ramp: full depth from epoch 1
 #   STEEP_SIG: [0.01]           # ignored by lin
+#   CL_RANDOM_DEPTH: [true]
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   EARLY_STOP_AFTER: [1000]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2]
 
 
-# --- BATCH 3: warmup strength — MAX_OUTER_STEPS_CL ---------------------------
-#   The number of deterministic pre-improvement steps at full curriculum.
-#   Sweep low->high on the winning schedule. Winner -> MAX_OUTER_STEPS_CL below.
-# - GROUP: [P3_strength]
+# --- Q3: mechanism C — persistent chains --------------------------------------
+#   Instances + best solutions persist across epochs; rho = fraction refreshed
+#   per epoch. Mean resume depth = OUTER_STEPS/rho SA steps (2000/1000/500 for
+#   the three arms at OUTER_STEPS=100) — brackets the Q2 xi range. Compute is
+#   IDENTICAL to the Q0 baseline (no warmup at all), so any gain is free.
+# - GROUP: [Q3_chain]
 #   CL: [true]
-#   CL_TYPE: [sig]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [100, 250, 500, 1000]
-#   MAX_PROB_STEP: [1000]
-#   STEEP_SIG: [0.01]
+#   CL_MODE: [chain]
+#   CL_TYPE: [sig]              # ignored in chain mode
+#   MAX_OUTER_STEPS_CL: [250]   # ignored
+#   MAX_PROB_STEP: [1000]       # ignored (early stop uses EARLY_STOP_AFTER)
+#   STEEP_SIG: [0.01]           # ignored
+#   CL_RANDOM_DEPTH: [false]    # ignored
+#   CHAIN_REFRESH: [0.05, 0.1, 0.2]
+#   EARLY_STOP_AFTER: [1000]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2]
 
 
-# - GROUP: [P3_strength]
+# --- Q4: coverage ablation — is Q2's gain the DEPTH MIX or just the warmup? ---
+#   Budget-matched control for the Q2 winner: constant depth xi*/2 for every
+#   instance = SAME mean warmup compute as random depth at xi*, but no
+#   within-batch coverage. If Q2 beats Q4, the depth MIX is what matters
+#   (P9's hypothesis confirmed); if they tie, it's just warmup budget.
+#   Run only if the Q2 winner cleared the Q0 floor.
+# - GROUP: [Q4_fixed_half]
 #   CL: [true]
-#   CL_TYPE: [lin]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [100, 250, 500, 1000]
-#   MAX_PROB_STEP: [1000]
-#   STEEP_SIG: [0.01]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
-
-
-# --- BATCH 4: ramp duration — MAX_PROB_STEP ---------------------------------
-#   Over how many epochs the warmup ramps from 0 to MAX_OUTER_STEPS_CL.
-#   Winner -> MAX_PROB_STEP below.
-# - GROUP: [P4_ramp]
-#   CL: [true]
-#   CL_TYPE: [lin]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [500, 1000, 2000]
-#   STEEP_SIG: [0.01]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
-
-# - GROUP: [P4_ramp]
-#   CL: [true]
-#   CL_TYPE: [sig]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [500, 1000, 2000]
-#   STEEP_SIG: [0.01]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
-
-
-# --- BATCH 5: sigmoid steepness — STEEP_SIG (only if sig won Batch 2) --------
-#   Controls how sharp the sigmoid ramp is. Skip if linear won. Winner -> below.
-# - GROUP: [P5_steep]
-#   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-#   STEEP_SIG: [0.005, 0.01, 0.05]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
-
-
-# --- BATCH 6: mechanism ablation — is it the RAMP or just the warmup? --------
-#   Same warmup budget, constant vs ramped. "const" uses a tiny MAX_PROB_STEP so
-#   t_init saturates to MAX_OUTER_STEPS_CL within a few epochs. EARLY_STOP_AFTER
-#   decouples early stopping from MAX_PROB_STEP so BOTH arms train the same
-#   length (set to >= N_EPOCHS to disable early stopping for a clean comparison).
-# - GROUP: [P6_const]
-#   CL: [true]
+#   CL_MODE: [warmup]
 #   CL_TYPE: [lin]
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [50]         # fast saturation -> ~constant warmup
-#   STEEP_SIG: [0.01]
-#   EARLY_STOP_AFTER: [2000]
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]
-#   SEED: [0, 1, 2]
-
-# - GROUP: [P6_ramp]
-#   CL: [true]
-#   CL_TYPE: [lin]
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-#   STEEP_SIG: [0.01]
-#   EARLY_STOP_AFTER: [2000]
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q2: winner xi* / 2
+#   MAX_PROB_STEP: [1]          # no ramp
+#   STEEP_SIG: [0.01]           # ignored by lin
+#   CL_RANDOM_DEPTH: [false]    # constant depth -> no coverage
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   EARLY_STOP_AFTER: [1000]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2]
 
 
-# --- BATCH 7: final confirmation — best config vs baseline (headline) --------
-#   Put the winning values from Batches 2-5 into P7_best. 5 seeds each gives the
-#   mean +/- std headline number and the significance test for the paper.
-
-# - GROUP: [P7_best]
+# --- Q5: confirmation — overall winner at 5 seeds ------------------------------
+#   Take the best arm across Q1/Q2/Q3 (decision rule in the header), run seeds
+#   3-4 to complete a 5-seed set (seeds 0-2 already exist in its exploratory
+#   batch if config is IDENTICAL — reuse them, don't re-run), seed-paired vs
+#   the EXISTING Q0. The values below are placeholders for a chain winner;
+#   overwrite with the actual winning mechanism's keys.
+#   EXTRA EVALS on these checkpoints (coverage payoff is expected OOD):
+#     uv run eval/run.py --dataset random --FOLDER Q5_confirm --dim 50  --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#     uv run eval/run.py --dataset random --FOLDER Q5_confirm --dim 200 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#     uv run eval/run.py --dataset random --FOLDER Q5_confirm --dim 100 --DATA uchoa  --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#   and keep the cost-vs-step curves (not just final cost): the early/high-cost
+#   segment is where depth coverage should show up.
+# - GROUP: [Q5_confirm]
 #   CL: [true]
-#   CL_TYPE: [sig]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-#   STEEP_SIG: [0.010]           # <-- FIX from Batch 5
+#   CL_MODE: [chain]            # <-- FIX: winning mechanism (warmup or chain)
+#   CL_TYPE: [sig]              # <-- FIX (only if warmup won)
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX (only if warmup won)
+#   MAX_PROB_STEP: [1000]       # <-- FIX (only if warmup won)
+#   STEEP_SIG: [0.01]           # <-- FIX (only if warmup-sig won)
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX (true if Q2 won)
+#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q3 (only if chain won)
+#   EARLY_STOP_AFTER: [1000]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [3]
 #   SEED: [0, 1, 2, 3, 4]
 
-# - GROUP: [P7_best_long]
+
+# --- Q6 (OPTIONAL): winner x long PPO ------------------------------------------
+#   P8 hinted PPO_EPOCHS=15 helps WITH curriculum (old config, so re-check).
+#   Winner mechanism + PPO_EPOCHS=15, 3 seeds, vs Q5. Only worth running if a
+#   mechanism cleared the floor; feeds the V10 PPO_EPOCHS decision.
+# - GROUP: [Q6_winner_ppo15]
 #   CL: [true]
-#   CL_TYPE: [sig]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-#   STEEP_SIG: [0.010]           # <-- FIX from Batch 5
+#   CL_MODE: [chain]            # <-- FIX: same config as Q5 winner
+#   CL_TYPE: [sig]              # <-- FIX
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX
+#   MAX_PROB_STEP: [1000]       # <-- FIX
+#   STEEP_SIG: [0.01]           # <-- FIX
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX
+#   CHAIN_REFRESH: [0.1]        # <-- FIX
+#   EARLY_STOP_AFTER: [1000]
 #   TEST_OUTER_STEPS: [5000]
 #   PPO_EPOCHS: [15]
-#   SEED: [0]
+#   SEED: [0, 1, 2]
 
-
-# --- BATCH 8: follow-ups from the P_final_res analysis ----------------------
-#   Two independent confirmations flagged by the analysis (res/P_final_res):
-#     (a) P8_long_confirm: P7_best_long was n=1, so the -3.2% long-PPO number is
-#         a single seed, not a measurement. Re-run with 5 seeds to confirm the
-#         long-PPO gain holds (and report mean +/- std). Seed 0 already exists in
-#         P7_best_long; it is re-listed here so all seeds share one GROUP/eval.
-#     (b) P8_plateau: MOS=100/MPS=1000/lin was among the best cells in Batches
-#         3-4 yet is statistically tied with the chosen P7_best (sig/250/2000).
-#         Run it at the SAME budget as P7_best (PPO_EPOCHS=3, 5 seeds) so the two
-#         can be compared seed-paired. EXPECTATION: no significant difference ->
-#         demonstrates the hyperparameter PLATEAU explicitly. Compare against the
-#         EXISTING res/P7_best (no need to re-run P7_best).
-#   Note: both groups list the identical key set (launcher rule); they differ
-#   only in values (PPO_EPOCHS, CL_TYPE, MAX_OUTER_STEPS_CL, MAX_PROB_STEP).
-# - GROUP: [P8_long_confirm]
-#   CL: [true]
-#   CL_TYPE: [sig]              # <-- FIX from Batch 2
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-#   STEEP_SIG: [0.010]          # <-- FIX from Batch 5
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [15]
-#   SEED: [0, 1, 2, 3, 4]
-
-# - GROUP: [P8_plateau]
-#   CL: [true]
-#   CL_TYPE: [lin]              # cheap cell that tied for best in Batch 3/4
-#   MAX_OUTER_STEPS_CL: [100]
-#   MAX_PROB_STEP: [1000]
-#   STEEP_SIG: [0.010]          # ignored by lin
-#   TEST_OUTER_STEPS: [5000]
-#   PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
-#   SEED: [0, 1, 2, 3, 4]
-
-
-# --- BATCH 9: per-instance random warmup depth ------------------------------
-#   New mechanism (not a hyperparameter of the existing curriculum): instead of
-#   warming EVERY instance to the same depth t_init each epoch, draw a per-instance
-#   depth d_i ~ U{0..t_init}. So within one batch d_i=0 leaves an instance at its
-#   raw heuristic init while d_i=t_init gives the full warmup, and everything in
-#   between -> every gradient update sees the WHOLE cost spectrum, not just the
-#   refined end. Hypothesis: keeps the policy competent on the high-cost early part
-#   of the test trajectory (train/test coverage), so the payoff should show up in
-#   ROBUSTNESS / OUT-OF-DISTRIBUTION eval more than in the in-distribution headline.
-#   Toggle: CL_RANDOM_DEPTH (false = current uniform warmup, true = per-instance).
-#   Batch compute is IDENTICAL to P7_best (frozen instances still run the loop,
-#   their moves are just masked), so this is a clean apples-to-apples comparison.
-#
-#   COMPARISON: P9_random_depth is P7_best with CL_RANDOM_DEPTH=true, same config,
-#   same 5 seeds -> seed-paired against the EXISTING res/P7_best (no need to re-run
-#   P7_best; it predates the flag and is equivalent to CL_RANDOM_DEPTH=false).
-#   EVAL: besides nazari dim-100, evaluate these checkpoints OUT-OF-DISTRIBUTION
-#   (e.g. a different dim and/or uchoa) — that is where the coverage benefit, if
-#   real, is expected to appear. Report the cost-vs-SA-step curve at test, not just
-#   the final cost, to check whether the early/high-cost segment improves.
-# - GROUP: [P9_random_depth]
-  # CL: [true]
-  # CL_TYPE: [sig]              # <-- FIX from Batch 2
-  # MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Batch 3
-  # MAX_PROB_STEP: [2000]       # <-- FIX from Batch 4
-  # STEEP_SIG: [0.010]          # <-- FIX from Batch 5
-  # CL_RANDOM_DEPTH: [true]     # per-instance depth d_i ~ U{0..t_init}
-  # TEST_OUTER_STEPS: [5000]
-  # PPO_EPOCHS: [3]            # same budget as P7_best -> seed-paired comparison
-  # SEED: [0, 1, 2, 3, 4]
 
 
 # ============================================================================
@@ -272,8 +215,8 @@
 #     (V10) then uses the best value.
 #   * CL = false for ALL component batches (V1-V9): isolate each component
 #     WITHOUT the curriculum confound. Curriculum is validated separately by the
-#     P0-P9 batches above; its winner (sig, xi_CL=250, E=2000, kappa=0.01) is
-#     folded back in only for the final model (V10).
+#     Q batches above; the Q5 winner is folded back in only for the final
+#     model (V10).
 #   * After batch Vn: evaluate (command in each batch), pick the lowest MEAN
 #     final_cost over seeds, and IF the winner differs from the current HP.yaml
 #     default, WRITE IT INTO HP.yaml before launching V(n+1). That is what
@@ -290,7 +233,7 @@
 #   V1 heuristic x feasibility -> V2 features -> V3 actor arch -> V4 critic ->
 #   V5 reward -> V6 temperature -> V7 metropolis(train) -> V8 init ->
 #   X1 learning rate -> X2 entropy -> X3 SA rollout -> X4 temperature range ->
-#   [P0-P9 curriculum, already done] -> V9 PPO epochs -> V10 FINAL model ->
+#   [Q0-Q6 curriculum redesign, above] -> V9 PPO epochs -> V10 FINAL model ->
 #   V11 cross-distribution -> V12 cross-dimension.
 #
 # EVAL PATTERN (Nazari/random; one command per GROUP folder; swept keys appear
@@ -787,32 +730,34 @@
 #   paper never sweeps; tune it here, on the fixed architecture, before curriculum.
 #   -> bake winner into HP.yaml: LR_ACTOR, LR_CRITIC.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER X1_lr --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [X1_lr]
-  LR_ACTOR: [0.0003, 0.001, 0.003]
-  LR_CRITIC: [0.0003, 0.001, 0.003]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [X1_lr]
+#   LR_ACTOR: [0.0003, 0.001, 0.003]
+#   LR_CRITIC: [0.0003, 0.001, 0.003]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- X2: PPO exploration (entropy coefficient) ------------------------------
 #   Fixed so far (HP.yaml): + learning rate. -> bake winner into HP.yaml: ENT_COEF.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER X2_entropy --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [X2_entropy]
-#   ENT_COEF: [0.0, 0.01, 0.05]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [X2_entropy]
+  OUTER_STEPS: [100]
+  ENT_COEF: [0.0, 0.01, 0.05]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- X3: SA training rollout length (steps per PPO batch) -------------------
 #   Fixed so far (HP.yaml): + entropy. -> bake winner into HP.yaml: OUTER_STEPS.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER X3_rollout --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [X3_rollout]
-#   OUTER_STEPS: [50, 100, 200]
-#   PPO_EPOCHS: [3]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [X3_rollout]
+  OUTER_STEPS: [50, 100, 200]
+  ENT_COEF: [0.01] 
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- X4: SA temperature RANGE (complements the schedule ablation V6) ---------
@@ -826,8 +771,8 @@
 #   SEED: [0, 1, 2]
 
 
-# ---- [CURRICULUM] run the P0-P9 batches above. Winner already established:
-#      sig, xi_CL=250, E=2000, kappa=0.01. Bake into HP.yaml for V10-V12. ------
+# ---- [CURRICULUM] run the Q0-Q6 batches above (redesigned protocol). Bake the
+#      Q5 winner (mechanism + its knobs) into HP.yaml for V10-V12. -------------
 
 
 # --- V9: impact of PPO inner epochs (CL false) ------------------------------
@@ -845,7 +790,8 @@
 
 # --- V10: FINAL deployed model = best config + best curriculum + best PPO ----
 #   All component winners are in HP.yaml. Here we (a) turn the BEST curriculum
-#   back on (P0-P9) and (b) set PPO_EPOCHS to the V9 winner, then train 5 seeds.
+#   back on (Q5 winner: mechanism + knobs) and (b) set PPO_EPOCHS to the V9
+#   winner (or Q6 if it beat PPO=3 with curriculum), then train 5 seeds.
 #   Deploy the best checkpoint for SOTA / scaling / the headline number (this is
 #   the model that should replace the old xi_CL=500 champion once re-run).
 #   EVAL — headline (10k):     uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16
@@ -854,12 +800,16 @@
 #   EVAL — scaling over steps: for S in 100 1000 5000 10000 100000 200000 500000 1000000; do uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS $S --dtype float16; done
 # - GROUP: [V10_final]
 #   CL: [true]
-#   CL_TYPE: [sig]              # <-- best curriculum (from P0-P9)
-#   MAX_OUTER_STEPS_CL: [250]
-#   MAX_PROB_STEP: [2000]
-#   STEEP_SIG: [0.010]
+#   CL_MODE: [chain]            # <-- FIX from Q5 winner (mechanism)
+#   CL_TYPE: [sig]              # <-- FIX from Q5 (warmup mode only)
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5 (warmup mode only)
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5 (warmup mode only)
+#   STEEP_SIG: [0.010]          # <-- FIX from Q5 (warmup-sig only)
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5 (true if Q2 won)
+#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5 (chain mode only)
+#   EARLY_STOP_AFTER: [1000]
 #   TEST_OUTER_STEPS: [10000]
-#   PPO_EPOCHS: [3]            # <-- FIX from V9 (P8 suggests 15 may be better with CL)
+#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6 (Q6 tests 15 with curriculum)
 #   SEED: [0, 1, 2, 3, 4]
 
 
@@ -871,22 +821,28 @@
 # - GROUP: [V11_dist]
 #   DATA: [random]
 #   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [250]
-#   MAX_PROB_STEP: [2000]
-#   STEEP_SIG: [0.010]
-#   PPO_EPOCHS: [3]            # <-- FIX from V9
+#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q5
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
+#   STEEP_SIG: [0.010]          # <-- FIX from Q5
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
+#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
+#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
 #   NAZARI: [true]
 #   SEED: [0, 1, 2]
 
 # - GROUP: [V11_dist]
 #   DATA: [uchoa]
 #   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [250]
-#   MAX_PROB_STEP: [2000]
-#   STEEP_SIG: [0.010]
-#   PPO_EPOCHS: [3]            # <-- FIX from V9
+#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q5
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
+#   STEEP_SIG: [0.010]          # <-- FIX from Q5
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
+#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
+#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
 #   NAZARI: [false]
 #   SEED: [0, 1, 2]
 
@@ -903,33 +859,42 @@
 #   MAX_LOAD: [40]
 #   TEST_DIMENSION: [50]
 #   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [250]
-#   MAX_PROB_STEP: [2000]
-#   STEEP_SIG: [0.010]
-#   PPO_EPOCHS: [3]
+#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q5
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
+#   STEEP_SIG: [0.010]          # <-- FIX from Q5
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
+#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
+#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
 #   SEED: [0, 1, 2]
 # - GROUP: [V12_dim100]
 #   PROBLEM_DIM: [100]
 #   MAX_LOAD: [50]
 #   TEST_DIMENSION: [100]
 #   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [250]
-#   MAX_PROB_STEP: [2000]
-#   STEEP_SIG: [0.010]
-#   PPO_EPOCHS: [3]
+#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q5
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
+#   STEEP_SIG: [0.010]          # <-- FIX from Q5
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
+#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
+#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
 #   SEED: [0, 1, 2]
 # - GROUP: [V12_dim500]
 #   PROBLEM_DIM: [500]
 #   MAX_LOAD: [50]
 #   TEST_DIMENSION: [500]
 #   CL: [true]
-#   CL_TYPE: [sig]
-#   MAX_OUTER_STEPS_CL: [250]
-#   MAX_PROB_STEP: [2000]
-#   STEEP_SIG: [0.010]
-#   PPO_EPOCHS: [3]
+#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q5
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
+#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
+#   STEEP_SIG: [0.010]          # <-- FIX from Q5
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
+#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
+#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
 #   SEED: [0, 1, 2]
 
 

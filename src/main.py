@@ -203,6 +203,75 @@ def initialize_training_problem(
     return problem
 
 
+def refresh_chain_pool(
+    problem: CVRP,
+    pool: dict[str, torch.Tensor] | None,
+    device: str,
+    config: dict[str, Any],
+    epoch: int,
+) -> tuple[CVRP, dict[str, torch.Tensor], torch.Tensor]:
+    """Persistent-chain curriculum (CL_MODE="chain").
+
+    Instead of re-warming fresh instances every epoch (CL_MODE="warmup"),
+    instances and their best solutions persist across epochs and the search
+    resumes where it left off. Each epoch a fraction CHAIN_REFRESH of the
+    chains is replaced by a fresh instance restarted from a raw construction,
+    so chain ages follow a geometric distribution: a single batch mixes raw
+    starts with solutions refined over many epochs (mean resume depth =
+    OUTER_STEPS / CHAIN_REFRESH SA steps), at zero warmup compute.
+    """
+    n = config["N_PROBLEMS"]
+
+    # Fresh instances for the whole batch; kept rows are overwritten below.
+    problem = initialize_training_problem(problem, device, config, epoch)
+
+    keep = None
+    if pool is not None:
+        keep = torch.rand(n, device=device) >= config["CHAIN_REFRESH"]
+        max_age = config.get("CHAIN_MAX_AGE", 0)
+        if max_age:
+            keep &= pool["age"] < max_age
+        coords = torch.where(keep.view(-1, 1, 1), pool["coords"], problem.coords)
+        demands = torch.where(keep.view(-1, 1), pool["demands"], problem.demands)
+        capacity = torch.where(keep.view(-1, 1), pool["capacity"], problem.capacity)
+        problem.generate_params(coords, demands, capacity)
+
+    # Raw constructions for every row (cheap); kept rows resume their stored
+    # best solution instead. Widths may differ across epochs (route-count
+    # slots), so both tensors are padded with depot indices (empty routes).
+    solutions = problem.generate_init_state(
+        init_heuristic=config["INIT"],
+        multi_init=config["MULTI_INIT"],
+        init_list=config.get("INIT_LIST", []),
+    )
+    if pool is not None:
+        stored = pool["solutions"]
+        width = max(solutions.shape[1], stored.shape[1])
+        solutions = torch.nn.functional.pad(solutions, (0, 0, 0, width - solutions.shape[1]))
+        stored = torch.nn.functional.pad(stored, (0, 0, 0, width - stored.shape[1]))
+        solutions = torch.where(keep.view(-1, 1, 1), stored, solutions)
+        solutions = problem.init_parameters(solutions)
+        age = torch.where(keep, pool["age"] + 1, torch.zeros_like(pool["age"]))
+    else:
+        age = torch.zeros(n, dtype=torch.long, device=device)
+
+    if config["VERBOSE"]:
+        logger.info(
+            f"[chain] epoch {epoch}: mean age {age.float().mean().item():.1f} epochs, "
+            f"refreshed {n - int(keep.sum().item()) if keep is not None else n}/{n}, "
+            f"mean resume cost {problem.cost(solutions).mean().item():.3f}"
+        )
+
+    pool = {
+        "coords": problem.coords,
+        "demands": problem.demands,
+        "capacity": problem.capacity,
+        "solutions": solutions,
+        "age": age,
+    }
+    return problem, pool, solutions
+
+
 # ============================================================================
 # CORE TRAINING LOGIC
 # ============================================================================
@@ -217,9 +286,13 @@ def train_ppo(
     problem: CVRP,
     config: dict[str, Any],
     step: int = 0,
+    initial_solutions_override: torch.Tensor | None = None,
 ) -> tuple[dict, tuple, float, float, int]:
     """
     Executes a single training epoch (SA collection + PPO update).
+
+    initial_solutions_override: resumed solutions from the persistent-chain
+    curriculum (CL_MODE="chain"); bypasses construction and the warmup phase.
     """
     if problem.device == "cuda":
         torch.cuda.empty_cache()
@@ -253,19 +326,24 @@ def train_ppo(
         # (Optional) Log just to see it working
         # print(f"Step {step}: Using {len(current_init_list)} methods: {current_init_list}")
 
-    # Generate initial solutions with the dynamic list
-    initial_solutions = problem.generate_init_state(
-        init_heuristic=config["INIT"],
-        multi_init=config["MULTI_INIT"],
-        init_list=current_init_list,  # Pass the dynamic list here
-    )
+    # Generate initial solutions with the dynamic list, unless the persistent-
+    # chain curriculum already provides resumed solutions for this epoch
+    if initial_solutions_override is not None:
+        initial_solutions = initial_solutions_override
+    else:
+        initial_solutions = problem.generate_init_state(
+            init_heuristic=config["INIT"],
+            multi_init=config["MULTI_INIT"],
+            init_list=current_init_list,  # Pass the dynamic list here
+        )
     buffer_size = config["OUTER_STEPS"]
     replay_buffer = ReplayBuffer(buffer_size, device=torch.device(problem.device))
     pre_step = 0
 
-    # 2. Curriculum Learning (Improvement Phase)
+    # 2. Curriculum Learning (Improvement Phase) — warmup mechanism only;
+    #    CL_MODE="chain" is handled upstream via initial_solutions_override
 
-    if config["CL"]:
+    if config["CL"] and config.get("CL_MODE", "warmup") == "warmup":
         t_init = (
             calculate_curriculum_steps_sig(step, config)
             if config["CL_TYPE"] == "sig"
@@ -289,7 +367,10 @@ def train_ppo(
                     0, t_init + 1, (n_inst,), device=initial_solutions.device
                 )
 
-            # Run deterministic improvement
+            # Warmup: a compressed SA run over t_init steps (stochastic
+            # sampling + Metropolis, NOT greedy descent); the best solution
+            # found becomes the collection start point. No transitions are
+            # stored (replay_buffer=None), so warmup compute is not trained on.
             pre_res_td, _ = sa_train(
                 actor=actor,
                 problem=problem,
@@ -460,10 +541,19 @@ def main(config: dict) -> None:
 
     save_period = 5
 
+    chain_mode = config["CL"] and config.get("CL_MODE", "warmup") == "chain"
+    chain_pool = None
+
     for epoch in progress_bar:
         _epoch_start = time.time()
         # A. Prepare Data
-        training_problem = initialize_training_problem(training_problem, device, config, epoch)
+        if chain_mode:
+            training_problem, chain_pool, chain_solutions = refresh_chain_pool(
+                training_problem, chain_pool, device, config, epoch
+            )
+        else:
+            training_problem = initialize_training_problem(training_problem, device, config, epoch)
+            chain_solutions = None
 
         # B. Run Training Step
         sa_td, sa_extra, train_stats, avg_actor_grad, avg_critic_grad, pre_step = train_ppo(
@@ -475,7 +565,11 @@ def main(config: dict) -> None:
             problem=training_problem,
             config=config,
             step=epoch + 1,
+            initial_solutions_override=chain_solutions,
         )
+        if chain_mode:
+            # Next epoch resumes each chain from this epoch's best solution
+            chain_pool["solutions"] = sa_td["best_x"].detach()
         # C. Extract Stats
         actor_loss, critic_loss, avg_entropy, beta_kl, explained_var, average_kl = train_stats
         config["BETA_KL"] = beta_kl
