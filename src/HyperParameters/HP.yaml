@@ -60,15 +60,15 @@ NUM_H_LAYERS: 1 # Number of hidden layers in MLP components
 
 # =============== Training ===============
 N_EPOCHS: 10000 # Total number of training epochs
-LR_ACTOR: 0.001 # Learning rate
-LR_CRITIC: 0.001 # Learning rate
+LR_ACTOR: 0.0003 # Learning rate (X1: lower actor LR monotonically better; was 0.001)
+LR_CRITIC: 0.003 # Learning rate (X1: best paired with low actor LR; was 0.001)
 WEIGHT_DECAY: 0.001 # L2 regularization
 BATCH_SIZE: 2048  # Training batch size 
 
 # =============== Simulated Annealing ===============
 INIT_TEMP: 1 # Initial temperature
-STOP_TEMP: 0.1 # Final temperature (to low tend to bad learning bcs rejection)
-OUTER_STEPS: 100 # Number of temperature steps
+STOP_TEMP: 0.01 # Final temperature (X4: 0.01 unanimously beats 0.1 by ~0.16; was 0.1)
+OUTER_STEPS: 200 # Number of temperature steps (X3: longer rollout better, sig but split; was 100)
 SCHEDULER: "lam" # Cooling schedule type
 METROPOLIS: True # Use Metropolis criterion
 

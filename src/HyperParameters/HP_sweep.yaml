@@ -741,23 +741,23 @@
 # --- X2: PPO exploration (entropy coefficient) ------------------------------
 #   Fixed so far (HP.yaml): + learning rate. -> bake winner into HP.yaml: ENT_COEF.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER X2_entropy --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [X2_entropy]
-  OUTER_STEPS: [100]
-  ENT_COEF: [0.0, 0.01, 0.05]
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [X2_entropy]
+#   OUTER_STEPS: [100]
+#   ENT_COEF: [0.0, 0.01, 0.05]
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- X3: SA training rollout length (steps per PPO batch) -------------------
 #   Fixed so far (HP.yaml): + entropy. -> bake winner into HP.yaml: OUTER_STEPS.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER X3_rollout --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [X3_rollout]
-  OUTER_STEPS: [50, 100, 200]
-  ENT_COEF: [0.01] 
-  PPO_EPOCHS: [3]
-  CL: [false]
-  SEED: [0, 1, 2]
+# - GROUP: [X3_rollout]
+#   OUTER_STEPS: [50, 100, 200]
+#   ENT_COEF: [0.01] 
+#   PPO_EPOCHS: [3]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- X4: SA temperature RANGE (complements the schedule ablation V6) ---------
@@ -769,6 +769,12 @@
 #   PPO_EPOCHS: [3]
 #   CL: [false]
 #   SEED: [0, 1, 2]
+
+# --- X5: Validate X set ---------
+- GROUP: [X5_validate]
+  PPO_EPOCHS: [3]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # ---- [CURRICULUM] run the Q0-Q6 batches above (redesigned protocol). Bake the
