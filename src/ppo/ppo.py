@@ -178,17 +178,26 @@ def run_ppo_training_epochs(
             actor_loss -= ent_coef * entropy
 
             # --- Backpropagation and Update ---
-            # Safety checks for NaN
-            if torch.isnan(actor_loss) or torch.isnan(critic_loss):
-                logger.warning("NaN detected in loss. Skipping batch.")
+            # Safety checks: inf also poisons the update, not just NaN
+            if not torch.isfinite(actor_loss) or not torch.isfinite(critic_loss):
+                logger.warning("Non-finite loss detected. Skipping batch.")
                 continue
 
             actor_loss.backward()
             critic_loss.backward()
 
             # Gradient clipping to avoid explosion
-            torch.nn.utils.clip_grad_norm_(actor.parameters(), max_norm=1.0)
-            torch.nn.utils.clip_grad_norm_(critic.parameters(), max_norm=1.0)
+            actor_grad_norm = torch.nn.utils.clip_grad_norm_(actor.parameters(), max_norm=1.0)
+            critic_grad_norm = torch.nn.utils.clip_grad_norm_(critic.parameters(), max_norm=1.0)
+
+            # A finite loss can still produce inf/NaN gradients (e.g. exp() in the
+            # KL/ratio terms overflowing during backward). Stepping the optimizer
+            # would write NaN into the weights permanently — skip instead.
+            if not torch.isfinite(actor_grad_norm) or not torch.isfinite(critic_grad_norm):
+                logger.warning("Non-finite gradients detected. Skipping optimizer step.")
+                actor_opt.zero_grad()
+                critic_opt.zero_grad()
+                continue
 
             actor_opt.step()
             critic_opt.step()
@@ -204,6 +213,15 @@ def run_ppo_training_epochs(
             num_batches += 1
 
         # --- Metrics tracking ---
+        if num_batches == 0:
+            # Every batch was skipped (non-finite losses/gradients): the networks
+            # likely hold non-finite weights. Continuing is pointless — bail out.
+            logger.error(
+                "All mini-batches skipped in PPO epoch %d (non-finite losses or "
+                "gradients). Stopping PPO update early.",
+                epoch,
+            )
+            break
         total_actor_loss.append(a_loss / num_batches)
         total_critic_loss.append(c_loss / num_batches)
         total_entropy.append(entropy_epoch / num_batches)
@@ -238,6 +256,10 @@ def run_ppo_training_epochs(
                 )
 
     # Return average losses and entropy
+    if not total_actor_loss:
+        # No PPO epoch completed a single batch — report NaNs so the failure is
+        # visible in logging without crashing the training loop.
+        return (float("nan"), float("nan"), float("nan"), beta_kl, explained_var_val, float("nan"))
     return (
         sum(total_actor_loss) / len(total_actor_loss),
         sum(total_critic_loss) / len(total_critic_loss),

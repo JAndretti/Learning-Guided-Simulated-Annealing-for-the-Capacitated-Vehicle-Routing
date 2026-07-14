@@ -201,6 +201,7 @@ class CVRPActor(SAModel):
         log_probs_all_c1 = torch.log_softmax(logits_c1, dim=-1)  # shape: (batch_size, problem_dim)
         p_log_p_c1 = torch.zeros_like(probs_c1)
         p_log_p_c1[valid_mask_c1] = probs_c1[valid_mask_c1] * log_probs_all_c1[valid_mask_c1]
+        p_log_p_c1 = torch.nan_to_num(p_log_p_c1, nan=0.0)
         entropy_c1 = -p_log_p_c1.sum(dim=-1)  # shape: (batch_size,)
         chosen_log_prob_c1 = log_probs_all_c1.gather(1, taken_c1.view(-1, 1)).squeeze(-1)
 
