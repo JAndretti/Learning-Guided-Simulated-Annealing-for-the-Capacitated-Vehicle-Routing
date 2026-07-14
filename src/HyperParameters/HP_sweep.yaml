@@ -771,10 +771,10 @@
 #   SEED: [0, 1, 2]
 
 # --- X5: Validate X set ---------
-- GROUP: [X5_validate2]
+- GROUP: [X5_validate3]
   PPO_EPOCHS: [3]
   CL: [false]
-  SEED: [ 0,1,2,3,4]
+  SEED: [0,1,2,3]
 
 
 # ---- [CURRICULUM] run the Q0-Q6 batches above (redesigned protocol). Bake the

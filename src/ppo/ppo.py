@@ -63,7 +63,12 @@ def run_ppo_training_epochs(
     target_KL = cfg["TARGET_KL"]
     beta_inc = 2.0  # factor to increase if KL too high
     beta_dec = 0.5  # factor to decrease if KL too low
-    LR_MAX = 1e-3
+    # Cap the adaptive-KL LR ramp relative to the *configured* LR_ACTOR rather
+    # than a hardcoded 1e-3. The old cap let the controller silently ramp a
+    # tuned 3e-4 up to 1e-3 — the exact value X1 rejected — which is the
+    # seed-dependent trigger for the seed-1 divergence. Allow modest headroom
+    # (2x) so the controller keeps some adaptivity but stays well below 1e-3.
+    LR_MAX = 2.0 * cfg["LR_ACTOR"]
     LR_MIN = 1e-5
     BETA_MIN = 1e-3
     BETA_MAX = 10.0
@@ -166,7 +171,11 @@ def run_ppo_training_epochs(
 
             # Compute KL div for monitoring and early stopping
             # with torch.no_grad():
-            delta_log = batch_old_log_probs - batch_log_probs
+            # Clamp before exp(): when the policy drifts far from the collection
+            # policy, exp(delta_log) overflows to inf in the backward pass, which
+            # is the source of the non-finite gradients guarded below. Bounding
+            # delta_log to +/-20 caps the penalty in the pathological tail only.
+            delta_log = (batch_old_log_probs - batch_log_probs).clamp(-20.0, 20.0)
             kl = (delta_log.exp() * delta_log).mean()
             approx_kl_divs.append(kl.item())
 
