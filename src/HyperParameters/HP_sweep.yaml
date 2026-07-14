@@ -60,19 +60,19 @@
 #   No-CL baseline, 5 seeds, under the CURRENT frozen config. Its pooled std is
 #   the significance threshold for every later Q comparison. All CL keys below
 #   are ignored when CL=false; they are listed for the launcher rule only.
-- GROUP: [Q0_baseline]
-  CL: [false]
-  CL_MODE: [warmup]           # ignored when CL=false
-  CL_TYPE: [sig]              # ignored
-  MAX_OUTER_STEPS_CL: [250]   # ignored
-  MAX_PROB_STEP: [1000]       # ignored
-  STEEP_SIG: [0.01]           # ignored
-  CL_RANDOM_DEPTH: [false]    # ignored
-  CHAIN_REFRESH: [0.1]        # ignored
-  EARLY_STOP_AFTER: [1000]    # ignored (gate inactive when CL=false)
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2, 3, 4]
+# - GROUP: [Q0_baseline]
+#   CL: [false]
+#   CL_MODE: [warmup]           # ignored when CL=false
+#   CL_TYPE: [sig]              # ignored
+#   MAX_OUTER_STEPS_CL: [250]   # ignored
+#   MAX_PROB_STEP: [1000]       # ignored
+#   STEEP_SIG: [0.01]           # ignored
+#   CL_RANDOM_DEPTH: [false]    # ignored
+#   CHAIN_REFRESH: [0.1]        # ignored
+#   EARLY_STOP_AFTER: [1000]    # ignored (gate inactive when CL=false)
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2, 3, 4]
 
 
 # --- Q1: mechanism A — old warmup-ramp winner, re-validated -------------------
@@ -80,19 +80,19 @@
 #   config, 5 seeds, seed-paired vs Q0. This is the incumbent the redesign has
 #   to beat; if even the old winner no longer clears the Q0 floor, the warmup
 #   mechanism itself is a null under the new config.
-- GROUP: [Q1_warmup_ramp]
-  CL: [true]
-  CL_MODE: [warmup]
-  CL_TYPE: [sig]
-  MAX_OUTER_STEPS_CL: [250]
-  MAX_PROB_STEP: [2000]
-  STEEP_SIG: [0.01]
-  CL_RANDOM_DEPTH: [false]
-  CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-  EARLY_STOP_AFTER: [1000]
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [3]
-  SEED: [0, 1, 2, 3, 4]
+# - GROUP: [Q1_warmup_ramp]
+#   CL: [true]
+#   CL_MODE: [warmup]
+#   CL_TYPE: [sig]
+#   MAX_OUTER_STEPS_CL: [250]
+#   MAX_PROB_STEP: [2000]
+#   STEEP_SIG: [0.01]
+#   CL_RANDOM_DEPTH: [false]
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   EARLY_STOP_AFTER: [1000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2, 3, 4]
 
 
 # --- Q2: mechanism B — stochastic warmup depth, no ramp -----------------------
@@ -788,10 +788,10 @@
 #   NOTE: with curriculum ON, P8 already showed PPO=15 beats PPO=3, so the best
 #   PPO *with* curriculum may exceed this CL-off optimum; V10 is where they meet.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V9_ppo_epochs --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V9_ppo_epochs]
-#   PPO_EPOCHS: [1, 3, 5, 10, 15, 20]
-#   CL: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V9_ppo_epochs]
+  PPO_EPOCHS: [1, 3, 5, 10, 15, 20]
+  CL: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V10: FINAL deployed model = best config + best curriculum + best PPO ----
