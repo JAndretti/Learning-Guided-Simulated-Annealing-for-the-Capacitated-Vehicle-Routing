@@ -7,7 +7,7 @@
 #SBATCH --gres=gpu:4                 # 4 GPUs per node (V100 nodes are quad-GPU max)
 #SBATCH --cpus-per-task=40           # 10 CPUs per GPU × 4 on V100
 #SBATCH --hint=nomultithread
-#SBATCH --time=3:00:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
+#SBATCH --time=2:00:00              # Max time (HH:MM:SS) max 20h a100 / 100h pour v100
 #SBATCH --output=logs/lgsa_%j.out
 #SBATCH --error=logs/lgsa_%j.out
 
