@@ -283,13 +283,12 @@ def sa_test(
 
         # 4. Update Current
         # Update cost only where accepted
-        current_cost = is_accepted * proposed_cost + (1 - is_accepted) * current_cost
+        current_cost = torch.where(is_accepted.bool(), proposed_cost, current_cost)
 
         # Update solution only where accepted
         is_accepted_expanded = extend_to(is_accepted, sol_components)
-        current_solution = (
-            is_accepted_expanded * proposed_sol
-            + (1 - is_accepted_expanded) * sol_components
+        current_solution = torch.where(
+            is_accepted_expanded.bool(), proposed_sol, sol_components
         ).long()
 
         # Sync problem internal state
@@ -308,8 +307,8 @@ def sa_test(
 
         # Update best solution
         is_imp_expanded = extend_to(is_improvement, current_solution)
-        best_solution = (
-            is_imp_expanded * current_solution + (1 - is_imp_expanded) * best_solution
+        best_solution = torch.where(
+            is_imp_expanded.bool(), current_solution, best_solution
         )
 
         if cumulative_cost is not None:
@@ -355,8 +354,10 @@ def sa_test(
                 action_log_prob,
             )
 
-        # Move to next state
-        current_state = next_state.clone()
+        # Move to next state. next_state is either freshly built (to_state -> cat) or
+        # aliases current_solution (baseline); current_solution is reassigned (never
+        # mutated in place) each step, so no defensive clone is needed.
+        current_state = next_state
 
     # --- FINAL CLEANUP ---
 
