@@ -373,9 +373,6 @@ def sa_train(
                 action, action_log_prob, mask, cond_rank = actor.sample(
                     current_state, greedy=greedy, problem=problem
                 )
-        if "cuda" in device:
-            torch.cuda.empty_cache()
-
         if record_state:
             tracking["action_distributions"].append(
                 actor.get_logits(current_state, action, problem=problem)
@@ -407,7 +404,9 @@ def sa_train(
             is_accepted = is_accepted * active
             actual_improvement = actual_improvement * active
 
-        tracking["is_valid_history"].append(is_valid.float().mean().item())
+        # Keep the per-step validity fraction on-device; convert once at epoch end
+        # (avoids a host<->device sync every step).
+        tracking["is_valid_history"].append(is_valid.float().mean())
         tracking["accepted_moves"] += is_accepted
         tracking["rejected_moves"] += 1 - is_accepted
         if record_state:
@@ -417,16 +416,16 @@ def sa_train(
 
         # Update Cost: Select proposed_cost where accepted, else keep old cost
 
-        opt_state["current_cost"] = (
-            is_accepted * proposed_cost + (1 - is_accepted) * opt_state["current_cost"]
+        opt_state["current_cost"] = torch.where(
+            is_accepted.bool(), proposed_cost, opt_state["current_cost"]
         )
 
         # Update Solution Tensor: Select proposed_sol where accepted, else keep old solution
         # Note: extend_to ensures the mask matches the solution shape [Batch, Nodes, 1]
         is_accepted_expanded = extend_to(is_accepted, sol_components)
 
-        opt_state["current_solution"] = (
-            is_accepted_expanded * proposed_sol + (1 - is_accepted_expanded) * sol_components
+        opt_state["current_solution"] = torch.where(
+            is_accepted_expanded.bool(), proposed_sol, sol_components
         ).long()
 
         # Sync problem internal state
@@ -442,9 +441,8 @@ def sa_train(
         is_improvement = (opt_state["current_cost"] < opt_state["best_cost"]).long()
 
         is_imp_expanded = extend_to(is_improvement, opt_state["current_solution"])
-        opt_state["best_solution"] = (
-            is_imp_expanded * opt_state["current_solution"]
-            + (1 - is_imp_expanded) * opt_state["best_solution"]
+        opt_state["best_solution"] = torch.where(
+            is_imp_expanded.bool(), opt_state["current_solution"], opt_state["best_solution"]
         )
         opt_state["best_cost"] = torch.minimum(opt_state["current_cost"], opt_state["best_cost"])
         opt_state["best_cost_step"] = torch.max(
@@ -494,8 +492,9 @@ def sa_train(
                 cond_rank=cond_rank,
             )
 
-        # Move to next state
-        current_state = next_state.clone()
+        # Move to next state. next_state is freshly built each step (to_state -> cat)
+        # and the heuristics never mutate it in place, so no defensive clone is needed.
+        current_state = next_state
 
     # --- FINALIZE RESULTS ---
 
@@ -527,7 +526,7 @@ def sa_train(
 
     results_extra = {
         "average_sum_rewards": torch.stack(tracking["all_rewards"]).cpu().sum(dim=0).mean(),
-        "is_valid": torch.tensor(tracking["is_valid_history"]),
+        "is_valid": torch.stack(tracking["is_valid_history"]).cpu(),
         "distributions": tracking["action_distributions"],
         "states": tracking["state_history"],
         "solutions": tracking["solution_history"],

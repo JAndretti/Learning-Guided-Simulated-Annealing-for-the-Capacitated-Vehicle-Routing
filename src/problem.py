@@ -250,9 +250,11 @@ class CVRP(Problem):
         """Computes distance of each node to its route's center of gravity."""
         coords = self.get_coords(solution)
 
-        # Setup aggregation tensors
-        num_routes = int(self.segment_ids.max().item()) + 1
+        # Setup aggregation tensors. seq_len + 1 is a static upper bound on the number
+        # of routes (segment_ids = mask.cumsum, max <= seq_len); extra columns stay zero
+        # and are never gathered. Avoids the per-step .item() host<->device sync.
         batch_size, seq_len = self.segment_ids.shape
+        num_routes = seq_len + 1
 
         route_coord_sums = torch.zeros(
             batch_size, num_routes, 2, device=self.device, dtype=coords.dtype
@@ -563,10 +565,14 @@ class CVRP(Problem):
 
     def _get_current_route_loads(self) -> torch.Tensor:
         """Helper to get total load per route ID."""
-        num_routes = self.segment_ids.max() + 1
+        # Over-allocate to seq_len + 1 (a static upper bound on num_routes, since
+        # segment_ids = mask.cumsum has max <= seq_len). Extra columns stay zero and
+        # are never gathered, so the result is identical to sizing by max()+1 -- but we
+        # avoid the .item() host<->device sync on the GPU-hot path (called every step).
+        num_routes = self.segment_ids.shape[1] + 1
         route_loads = torch.zeros(
             self.n_problems,
-            int(num_routes.item()),
+            num_routes,
             device=self.device,
             dtype=self.ordered_demands.dtype,
         )
@@ -615,9 +621,6 @@ class CVRP(Problem):
             new_demands = self.get_demands(sol)
             valid = is_feasible(sol, new_demands, self.capacity).unsqueeze(-1).long()
 
-            if not valid.all() and not self.params.get("UPDATE_METHOD") == "free":
-                print("Warning: Some modified solutions are infeasible.")
-
             # Revert invalid moves
         final_sol = torch.where(valid.unsqueeze(-1) == 1, sol, solution).to(torch.int64)
 
@@ -627,41 +630,35 @@ class CVRP(Problem):
         """
         Computes load accumulated from the start of the route up to each node (head_load)
         and load remaining from the node to the end of the route (tail_load).
+
+        O(L) segmented cumulative sum. `segment_ids` is monotonic non-decreasing and
+        demands are >= 0, so the global exclusive prefix sum is non-decreasing and its
+        minimum within a segment is reached at that segment's first node. Subtracting
+        that per-segment offset from the (inclusive) global cumsum yields the in-segment
+        head load. This replaces the previous O(L^2) [B, L, L] mask matrix (bit-identical
+        output, but avoids the L x L memory blow-up that is prohibitive for X/XL sizes).
         """
-        # 1. Global cumulative sum
-        # global_cum = torch.cumsum(self.ordered_demands, dim=1)  # [B, N]
+        d = self.ordered_demands  # [B, L]
+        gc = torch.cumsum(d, dim=1)  # inclusive global prefix sum
+        seg = self.segment_ids  # [B, L], monotonic non-decreasing
+        # seq_len + 1 upper-bounds num routes (seg = mask.cumsum, max <= seq_len). Unused
+        # columns keep the sentinel / zero and are never gathered -> identical output,
+        # no .item() host<->device sync.
+        num_seg = seg.shape[1] + 1
 
-        # 2. Find the cumulative sum value at the *start* of each segment
-        # We create a mapping where every node knows the cumsum value of the node
-        # immediately preceding its route.
+        # Exclusive global prefix sum (cumsum shifted right by one).
+        gc_prev = torch.cat([torch.zeros_like(gc[:, :1]), gc[:, :-1]], dim=1)
 
-        # Create a mask for segment changes (where segment_id changes from prev)
-        # or simply scatter min/max.
-        # Approach: Gather the global_cum value at the index corresponding to the start of the segment.
+        # Per-segment offset = exclusive prefix sum at the segment's first node.
+        # Sentinel must exceed any real prefix sum; demands may be integer or float.
+        sentinel = float("inf") if d.is_floating_point() else torch.iinfo(d.dtype).max
+        seg_start = torch.full((d.size(0), num_seg), sentinel, device=d.device, dtype=d.dtype)
+        seg_start.scatter_reduce_(1, seg, gc_prev, reduce="amin", include_self=True)
+        head_load = gc - seg_start.gather(1, seg)  # in-segment cumulative load up to i (incl.)
 
-        # Efficient vectorized way to get 'start_value' per segment:
-        # Since segment_ids are monotonic, we can use scatter_reduce (PyTorch 1.11+)
-        # or simply use the fact that the depot (demand 0) resets the load.
-
-        # Simpler Matrix Approach (O(N^2) memory but safe for batches):
-        # Mask[b, i, j] = 1 if i and j in same segment and j <= i
-        same_segment = self.segment_ids.unsqueeze(2) == self.segment_ids.unsqueeze(1)
-        lower_tri = torch.tril(torch.ones_like(same_segment))
-        mask = same_segment * lower_tri
-
-        # Sum demands only within the active segment up to current node
-        head_load = (self.ordered_demands.unsqueeze(1) * mask).sum(dim=2)
-
-        # 3. Get total route loads to calculate tails
-        # We already have self._get_current_route_loads() but we need it mapped to every node
-        per_route_totals = self._get_current_route_loads()  # [B, num_routes]
-        total_segment_load = torch.gather(per_route_totals, 1, self.segment_ids)
-
-        # Tail load: The demand of the rest of the route *excluding* the current node
-        # (The current node is part of the 'Head' in 2-opt* logic usually,
-        # but let's define cut after index i)
-        # If we cut AFTER i: Head = [0...i], Tail = [i+1...End]
-        tail_load = total_segment_load - head_load
+        # Tail = total segment load - head (load strictly after i within the route).
+        totals = torch.zeros_like(seg_start).scatter_add_(1, seg, d)
+        tail_load = totals.gather(1, seg) - head_load
 
         return head_load, tail_load
 
