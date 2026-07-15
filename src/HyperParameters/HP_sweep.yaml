@@ -788,15 +788,15 @@
 #   NOTE: with curriculum ON, P8 already showed PPO=15 beats PPO=3, so the best
 #   PPO *with* curriculum may exceed this CL-off optimum; V10 is where they meet.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V9_ppo_epochs --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V9_ppo_epochs]
-#   PPO_EPOCHS: [5, 10, 15]
-#   CL: [false]
-#   SEED: [0, 1, 2]
-
 - GROUP: [V9_ppo_epochs]
-  PPO_EPOCHS: [1, 3, 20]
+  PPO_EPOCHS: [5, 10, 15]
   CL: [false]
   SEED: [0, 1, 2]
+
+# - GROUP: [V9_ppo_epochs]
+#   PPO_EPOCHS: [1, 3, 20]
+#   CL: [false]
+#   SEED: [0, 1, 2]
 
 
 # --- V10: FINAL deployed model = best config + best curriculum + best PPO ----
