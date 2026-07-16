@@ -99,11 +99,25 @@
 #   d_i ~ U{0..xi} per instance; CL_TYPE=lin + MAX_PROB_STEP=1 kill the ramp
 #   (t_init=xi from epoch 1), so xi is the ONLY knob. Sweep it. Mean warmup
 #   compute is xi/2 steps/epoch (vs xi for the same arm without random depth).
+# - GROUP: [Q2_depth]
+#   CL: [true]
+#   CL_MODE: [warmup]
+#   CL_TYPE: [lin]
+#   MAX_OUTER_STEPS_CL: [250, 500, 1000]
+#   MAX_PROB_STEP: [1]          # no ramp: full depth from epoch 1
+#   STEEP_SIG: [0.01]           # ignored by lin
+#   CL_RANDOM_DEPTH: [true]
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   EARLY_STOP_AFTER: [1000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+
 - GROUP: [Q2_depth]
   CL: [true]
   CL_MODE: [warmup]
   CL_TYPE: [lin]
-  MAX_OUTER_STEPS_CL: [250, 500, 1000]
+  MAX_OUTER_STEPS_CL: [1000]
   MAX_PROB_STEP: [1]          # no ramp: full depth from epoch 1
   STEEP_SIG: [0.01]           # ignored by lin
   CL_RANDOM_DEPTH: [true]
@@ -111,7 +125,35 @@
   EARLY_STOP_AFTER: [1000]
   TEST_OUTER_STEPS: [5000]
   PPO_EPOCHS: [3]
-  SEED: [0, 1, 2]
+  SEED: [0]
+
+- GROUP: [Q2_depth]
+  CL: [true]
+  CL_MODE: [warmup]
+  CL_TYPE: [lin]
+  MAX_OUTER_STEPS_CL: [500]
+  MAX_PROB_STEP: [1]          # no ramp: full depth from epoch 1
+  STEEP_SIG: [0.01]           # ignored by lin
+  CL_RANDOM_DEPTH: [true]
+  CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+  EARLY_STOP_AFTER: [1000]
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [1,2]
+
+- GROUP: [Q2_depth]
+  CL: [true]
+  CL_MODE: [warmup]
+  CL_TYPE: [lin]
+  MAX_OUTER_STEPS_CL: [250]
+  MAX_PROB_STEP: [1]          # no ramp: full depth from epoch 1
+  STEEP_SIG: [0.01]           # ignored by lin
+  CL_RANDOM_DEPTH: [true]
+  CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+  EARLY_STOP_AFTER: [1000]
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [1,0]
 
 
 # --- Q3: mechanism C — persistent chains --------------------------------------
@@ -119,6 +161,20 @@
 #   per epoch. Mean resume depth = OUTER_STEPS/rho SA steps (2000/1000/500 for
 #   the three arms at OUTER_STEPS=100) — brackets the Q2 xi range. Compute is
 #   IDENTICAL to the Q0 baseline (no warmup at all), so any gain is free.
+# - GROUP: [Q3_chain]
+#   CL: [true]
+#   CL_MODE: [chain]
+#   CL_TYPE: [sig]              # ignored in chain mode
+#   MAX_OUTER_STEPS_CL: [250]   # ignored
+#   MAX_PROB_STEP: [1000]       # ignored (early stop uses EARLY_STOP_AFTER)
+#   STEEP_SIG: [0.01]           # ignored
+#   CL_RANDOM_DEPTH: [false]    # ignored
+#   CHAIN_REFRESH: [0.05, 0.1, 0.2]
+#   EARLY_STOP_AFTER: [1000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [3]
+#   SEED: [0, 1, 2]
+
 - GROUP: [Q3_chain]
   CL: [true]
   CL_MODE: [chain]
@@ -131,7 +187,21 @@
   EARLY_STOP_AFTER: [1000]
   TEST_OUTER_STEPS: [5000]
   PPO_EPOCHS: [3]
-  SEED: [0, 1, 2]
+  SEED: [0]
+
+- GROUP: [Q3_chain]
+  CL: [true]
+  CL_MODE: [chain]
+  CL_TYPE: [sig]              # ignored in chain mode
+  MAX_OUTER_STEPS_CL: [250]   # ignored
+  MAX_PROB_STEP: [1000]       # ignored (early stop uses EARLY_STOP_AFTER)
+  STEEP_SIG: [0.01]           # ignored
+  CL_RANDOM_DEPTH: [false]    # ignored
+  CHAIN_REFRESH: [0.2]
+  EARLY_STOP_AFTER: [1000]
+  TEST_OUTER_STEPS: [5000]
+  PPO_EPOCHS: [3]
+  SEED: [1]
 
 
 # --- Q4: coverage ablation — is Q2's gain the DEPTH MIX or just the warmup? ---

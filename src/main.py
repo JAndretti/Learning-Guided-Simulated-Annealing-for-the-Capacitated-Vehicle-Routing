@@ -15,7 +15,9 @@ Key Components:
 # ============================================================================
 
 # Standard Library
+import datetime
 import math
+import os
 import time
 import warnings
 from typing import Any
@@ -660,6 +662,14 @@ def main(config: dict) -> None:
                 critic_loss,
                 current_test_loss.item(),
             )
+
+    # --- 6. Completion Marker ---
+    # Written last so external tooling can tell a finished run from a crashed one.
+    if config["LOG"]:
+        marker_path = os.path.join(WandbLogger.get_model_dir(), "finished")
+        with open(marker_path, "w") as f:
+            f.write(f"{datetime.datetime.now().isoformat()}\nepochs={epoch + 1}\n")
+        logger.info(f"Wrote completion marker: {marker_path}")
 
     logger.info("Training Completed Successfully.")
 
