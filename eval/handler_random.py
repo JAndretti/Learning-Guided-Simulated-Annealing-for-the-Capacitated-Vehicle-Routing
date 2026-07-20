@@ -17,10 +17,15 @@ from init import initialize_test_problem
 
 def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--dim", type=int, default=100, choices=[10, 20, 50, 100, 500, 1000]
+        "--dim", type=int, default=100, choices=[10, 20, 50, 100, 200, 500, 1000]
     )
     parser.add_argument(
         "--DATA", type=str, default="nazari", choices=["nazari", "uchoa"]
+    )
+    parser.add_argument(
+        "--DATA_SOURCE", type=str, default="default", choices=["default", "neuopt"],
+        help="nazari test set: 'default' (gen_nazari_{dim}.pt) or 'neuopt' "
+             "(NeuOpt_data/cvrp_{dim}.pkl)",
     )
     parser.add_argument("--batch_size", type=int, default=10000)
     parser.add_argument(
@@ -106,6 +111,7 @@ def run(args: argparse.Namespace) -> None:
         init_method=args.INIT,
         data=args.DATA,
         device=args.device,
+        source=args.DATA_SOURCE,
     )
     init_cost = torch.mean(problem.cost(init_x)).item()
     print(f"Problem initialised. Initial cost: {init_cost:.4f}")
@@ -203,7 +209,9 @@ def run(args: argparse.Namespace) -> None:
         row = {
             "model": os.path.basename(model_name),
             "dtype": args.dtype,
-            "test_data": args.DATA,
+            "test_data": (
+                f"{args.DATA}_{args.DATA_SOURCE}" if args.DATA == "nazari" else args.DATA
+            ),
             "initial_cost": init_cost,
             "final_cost": final_cost,
             "final_cost_baseline": final_cost_bl,

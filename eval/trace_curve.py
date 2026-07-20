@@ -24,6 +24,7 @@ import os
 import sys
 import time
 
+import numpy as np
 import pandas as pd
 import torch
 from tqdm import tqdm
@@ -239,6 +240,7 @@ def make_plot(
     show_current: bool,
     logx: bool,
     xlabel: str = "SA step",
+    vline: float | None = None,
 ) -> None:
     """
     df is long-format (method, step, mean_best, mean_current) so the two runs may
@@ -289,6 +291,22 @@ def make_plot(
 
     if logx:
         ax.set_xscale("log")
+
+    # Equal-wall-clock marker: where the baseline has spent as much time as the
+    # full model run. Recessive — it annotates the curves, it is not a series.
+    if vline is not None:
+        ax.axvline(vline, color="0.55", lw=0.7, ls=(0, (3, 2)), zorder=2)
+        ax.annotate(
+            "equal time",
+            xy=(vline, 1.0),
+            xycoords=("data", "axes fraction"),
+            xytext=(3, -2),
+            textcoords="offset points",
+            va="top",
+            ha="left",
+            fontsize=6.5,
+            color="0.45",
+        )
 
     # Direct labels at each curve's own end — identity is never colour-alone, and
     # the two ends may differ when the step budgets differ.
@@ -378,6 +396,12 @@ def build_parser() -> argparse.ArgumentParser:
         "(use when the two budgets differ and you want to compare anneal shape)",
     )
     p.add_argument("--logx", action="store_true", help="Log-scale the step axis")
+    p.add_argument(
+        "--no-equal-time",
+        dest="no_equal_time",
+        action="store_true",
+        help="Hide the vertical marker at the equal-wall-clock baseline step",
+    )
     p.add_argument(
         "--show_current",
         action="store_true",
@@ -493,18 +517,48 @@ def main() -> None:
     os.makedirs(os.path.dirname(out), exist_ok=True)
     df.to_csv(f"{out}.csv", index=False)
 
+    fin = {n: runs[n]["best_cost"].mean().item() for n in runs}
+
+    # --- Equal-compute marker -------------------------------------------------
+    # Baseline step reached after the same wall-clock time as the whole model run,
+    # assuming a constant per-step cost: eq = T_model / (T_base / steps_base).
+    # Deliberately coarse — it uses the two total runtimes, so it inherits any
+    # fixed setup overhead in either run. Indicative, not a benchmark.
+    eq_step = None
+    if not args.no_equal_time and runs["baseline"]["time"] > 0:
+        per_step_base = runs["baseline"]["time"] / steps_of["baseline"]
+        eq_step = runs["model"]["time"] / per_step_base
+        if eq_step > steps_of["baseline"]:
+            print(
+                f"Equal-time point is at baseline step ~{eq_step:.0f}, beyond its "
+                f"{steps_of['baseline']} budget — marker omitted. "
+                f"Raise --STEPS_BASELINE to show it."
+            )
+            eq_step = None
+        else:
+            g = df[df["method"] == "baseline"]
+            cost_at_eq = float(np.interp(eq_step, g["step"], g["mean_best"]))
+            print(
+                f"Equal time ({runs['model']['time']:.1f}s): baseline step "
+                f"~{eq_step:.0f}, mean best cost {cost_at_eq:.4f} "
+                f"vs LG-SA {fin['model']:.4f}"
+            )
+
     df_plot = df.copy()
+    vline = eq_step
     if args.x_frac:
         df_plot["step"] = df_plot["step_frac"]
+        if vline is not None:
+            vline = vline / steps_of["baseline"]
     make_plot(
         df_plot,
         out,
         show_current=args.show_current,
         logx=args.logx,
         xlabel="Fraction of step budget" if args.x_frac else "SA step",
+        vline=vline,
     )
 
-    fin = {n: runs[n]["best_cost"].mean().item() for n in runs}
     gap = 100.0 * (fin["baseline"] - fin["model"]) / fin["baseline"]
     print(
         f"\nFinal: LG-SA {fin['model']:.4f} ({steps_of['model']} steps) "

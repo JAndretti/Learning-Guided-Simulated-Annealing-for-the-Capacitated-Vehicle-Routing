@@ -1,3 +1,4 @@
+import pickle
 from typing import Any
 
 import torch
@@ -132,6 +133,39 @@ def inf_test_model(
     return results_td, results_extra
 
 
+def load_neuopt_nazari(test_dim: int, n_problems: int) -> tuple[torch.Tensor, ...]:
+    """Load the NeuOpt-distributed nazari test set and convert it to our tensor layout.
+
+    The pickle holds a list of `(depot_xy, node_xy, demands, capacity)` tuples with the
+    same conventions as our own `.pt` files (coords in [0, 1], integer demands).
+
+    Args:
+        test_dim: Number of customers (depot excluded)
+        n_problems: Number of instances to keep
+
+    Returns:
+        Tuple of (node_coords [B, dim+1, 2], demands [B, dim+1], capacity [B, 1])
+    """
+    path = f"generated_nazari_problem/NeuOpt_data/cvrp_{test_dim}.pkl"
+    try:
+        with open(path, "rb") as f:
+            raw = pickle.load(f)
+    except FileNotFoundError:
+        print(f"NeuOpt test data file not found: {path}")
+        raise
+
+    raw = raw[:n_problems]
+    depot = torch.tensor([inst[0] for inst in raw], dtype=torch.float32)  # [B, 2]
+    nodes = torch.tensor([inst[1] for inst in raw], dtype=torch.float32)  # [B, dim, 2]
+    dem = torch.tensor([inst[2] for inst in raw], dtype=torch.int64)  # [B, dim]
+    cap = torch.tensor([inst[3] for inst in raw], dtype=torch.int64)  # [B]
+
+    coordinates = torch.cat([depot.unsqueeze(1), nodes], dim=1)
+    demands = torch.cat([torch.zeros_like(dem[:, :1]), dem], dim=1)
+    capacities = cap.unsqueeze(1)
+    return coordinates, demands, capacities
+
+
 def initialize_test_problem(
     config: dict[str, Any],
     test_dim: int,
@@ -139,6 +173,7 @@ def initialize_test_problem(
     init_method: str,
     data: str = "nazari",
     device: str = "cpu",
+    source: str = "default",
 ) -> tuple[CVRP, torch.Tensor]:
     """
     Initialize test problem instance with pre-generated data.
@@ -150,22 +185,34 @@ def initialize_test_problem(
         init_method: Method for generating initial solutions
         data: Dataset type ("nazari" or "uchoa")
         device: Compute device string
+        source: For `data="nazari"`, which test set to read — "default" (our own
+            `gen_nazari_{dim}.pt`) or "neuopt" (`NeuOpt_data/cvrp_{dim}.pkl`)
 
     Returns:
         Tuple of (test_problem_instance, initial_test_solutions)
     """
 
     if data == "nazari":
-        path = f"generated_nazari_problem/gen_nazari_{test_dim}.pt"
+        if source == "neuopt":
+            coordinates, demands, capacities = load_neuopt_nazari(
+                test_dim, n_test_problems
+            )
+            coordinates = coordinates.to(device)
+            demands = demands.to(device)
+            capacities = capacities.to(device)
+        elif source == "default":
+            path = f"generated_nazari_problem/gen_nazari_{test_dim}.pt"
 
-        try:
-            test_data = torch.load(path, map_location="cpu")
-        except FileNotFoundError:
-            print(f"Nazari test data file not found: {path}")
-            raise
-        coordinates = test_data["node_coords"][:n_test_problems].to(device)
-        demands = test_data["demands"][:n_test_problems].to(device)
-        capacities = test_data["capacity"][:n_test_problems].to(device)
+            try:
+                test_data = torch.load(path, map_location="cpu")
+            except FileNotFoundError:
+                print(f"Nazari test data file not found: {path}")
+                raise
+            coordinates = test_data["node_coords"][:n_test_problems].to(device)
+            demands = test_data["demands"][:n_test_problems].to(device)
+            capacities = test_data["capacity"][:n_test_problems].to(device)
+        else:
+            raise ValueError(f"Unknown nazari data source: {source}")
 
     elif data == "uchoa":
         problem_path = f"generated_uchoa_problem/gen_uchoa_{test_dim}.pt"
