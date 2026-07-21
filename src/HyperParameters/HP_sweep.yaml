@@ -813,9 +813,13 @@
 #      Q5's 5-seed confirmation reversed the pre-registered Q2 pick: Q1 beats Q2
 #      on the mean (16.1649 vs 16.2038) and 4/5 seeds head-to-head. Q2 (stochastic
 #      depth) tied within a strict CI but lost; Q3 (chain) rejected outright. The
-#      Q1 config is now baked into HP.yaml and into the V10-V12 FIX slots below.
-#      (One caveat: the Q5 OOD evals were never run, so if V11/V12 disappoint,
-#      re-test Q2 there -- its depth coverage was hypothesised to pay off OOD.) --
+#      Q1 config is now baked into HP.yaml and into V10's FIX slots below.
+#      NB V10 is the ONLY batch that carries the curriculum: V11/V12 run with
+#      CL=false on purpose (see their header) -- they are generalization
+#      ablations, not the headline number. Consequence: the Q5 OOD evals were
+#      never run AND V11/V12 no longer test the curriculum OOD either, so the
+#      P9/Q2 hypothesis that depth coverage pays off out-of-distribution stays
+#      untested. If that matters for the paper, it needs its own batch. --
 
 
 # --- V9: impact of PPO inner epochs (CL false) ------------------------------
@@ -863,91 +867,106 @@
 #   SEED: [0, 1, 2, 3, 4]
 
 
+# ============================================================================
+# V11 + V12 — GENERALIZATION BATCH (NO CURRICULUM, run as ONE sweep)
+# ============================================================================
+# CL IS OFF for every group here. These are generalization ablations, not the
+# headline result: the deployed number comes from V10 (with the Q1 curriculum).
+# Turning CL off costs a little absolute quality but removes 7 knobs and the
+# warmup compute, and the Q-batch effect size (~0.07 on a ~16.2 cost, <0.5%)
+# is far smaller than the cross-distribution / cross-dimension gaps these two
+# tables are meant to expose. So every V11/V12 cell is a plain no-CL model and
+# the comparisons stay strictly within-batch (all cells share the same recipe).
+#
+# ALL FIVE GROUPS BELOW SHARE ONE KEY SET on purpose, so the launcher's
+# "every grid must declare the same parameters" check passes and V11+V12 run
+# in a SINGLE sweep. The key set is the union of what the two studies vary:
+#   CL, DATA, NAZARI, PROBLEM_DIM, MAX_LOAD, TEST_DIMENSION,
+#   PPO_EPOCHS, TEST_OUTER_STEPS, SEED
+# V11 groups therefore pin the V12 keys to the default dim-100 values, and V12
+# groups pin the V11 keys to Nazari/random. Uncomment ALL FIVE together.
+# Every CL_* key is deliberately absent: with CL:[false] the warmup branch
+# (src/main.py:348) and the chain branch (:546) are both dead, and the
+# EARLY_STOP_AFTER gate (:648) is bypassed, so those keys inherit HP.yaml
+# harmlessly and would only be dead weight in the grid.
+# Total runs: 4 groups x 3 seeds = 12.
+#
+# SHARED CELL: with CL off, "V11 trained on random" and "V12 trained at dim 100"
+# are the SAME config (random, dim 100, Q=50, no CL, PPO=5), so the old
+# V12_dim100 group was dropped and V11_train_random serves BOTH tables:
+#   Table data_generalization, row "trained on random" -> V11_train_random
+#   Table dim_generalization,  row "trained at N=100"  -> V11_train_random
+# Saves 3 of 15 runs. Say so in the paper caption; it is the same 3 checkpoints.
+#
+# GROUP NAMES MUST BE UNIQUE PER CONFIG: eval/eval_io.py:20 globs *every* run
+# under wandb/LGSA/<FOLDER>/models/ and returns the single lowest-loss one. The
+# two V11 arms therefore CANNOT share GROUP: V11_dist (eval would silently pick
+# a random-trained or uchoa-trained checkpoint at will, and their val losses are
+# not even comparable across distributions). Hence V11_train_random /
+# V11_train_uchoa below.
+
 # --- V11: cross-distribution generalization (Table data_generalization) ------
-#   FINAL config trained on Nazari random vs Queiroga/Uchoa; both tested on
-#   Nazari (here) and Uchoa. Expect random-trained to win on BOTH.
-#   EVAL on Nazari: uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
-#   EVAL on Uchoa:  uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA uchoa  --OUTER_STEPS 10000 --dtype float16 --no-baseline
-- GROUP: [V11_dist]
-  DATA: [random]
-  CL: [true]
-  CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
-  CL_TYPE: [sig]              # <-- FIX from Q1
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
-  MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
-  STEEP_SIG: [0.010]          # <-- FIX from Q1
-  CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
-  CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-  PPO_EPOCHS: [5]            # <-- FIX from V9
-  NAZARI: [true]
+#   Trained on Nazari random vs Queiroga/Uchoa; both tested on Nazari AND Uchoa
+#   (2 training sets x 2 test sets = the 4 cells of the table).
+#   Expect random-trained to win on BOTH.
+#   EVAL (run for F in V11_train_random V11_train_uchoa):
+#     uv run eval/run.py --dataset random --FOLDER $F --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
+#     uv run eval/run.py --dataset random --FOLDER $F --dim 100 --DATA uchoa  --OUTER_STEPS 10000 --dtype float16 --no-baseline
+- GROUP: [V11_train_random]   # ALSO the N=100 row of the V12 table (see above)
+  CL: [false]
+  DATA: [random]              # <-- the V11 variable
+  NAZARI: [true]              # test set matches the training distribution
+  PROBLEM_DIM: [100]
+  MAX_LOAD: [50]
+  TEST_DIMENSION: [100]
+  PPO_EPOCHS: [5]             # <-- FIX from V9
+  TEST_OUTER_STEPS: [5000]
   SEED: [0, 1, 2]
 
-- GROUP: [V11_dist]
-  DATA: [uchoa]
-  CL: [true]
-  CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
-  CL_TYPE: [sig]              # <-- FIX from Q1
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
-  MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
-  STEEP_SIG: [0.010]          # <-- FIX from Q1
-  CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
-  CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-  PPO_EPOCHS: [5]            # <-- FIX from V9
-  NAZARI: [false]
+- GROUP: [V11_train_uchoa]
+  CL: [false]
+  DATA: [uchoa]               # <-- the V11 variable
+  NAZARI: [false]             # test set matches the training distribution
+  PROBLEM_DIM: [100]
+  MAX_LOAD: [50]
+  TEST_DIMENSION: [100]
+  PPO_EPOCHS: [5]             # <-- FIX from V9
+  TEST_OUTER_STEPS: [5000]
   SEED: [0, 1, 2]
 
 
 # --- V12: cross-dimension generalization ------------------------------------
-#   FINAL config trained at each dim, cross-tested at every test dim {50,100,500}.
+#   Trained at each dim, cross-tested at every test dim {50,100,500}.
 #   Training capacity (MAX_LOAD) must match the Nazari convention per dim:
 #   50:Q=40, 100:Q=50, 500:Q=50 -> pinned with PROBLEM_DIM in separate groups.
 #   N=500 training is memory-heavy; lower N_PROBLEMS if it OOMs.
-#   CROSS-TEST: for TD in 50 100 500; do for F in V12_dim50 V12_dim100 V12_dim500; do \
+#   The N=100 row is NOT trained here -- it is V11_train_random (identical config).
+#   CROSS-TEST: for TD in 50 100 500; do for F in V12_dim50 V11_train_random V12_dim500; do \
 #     uv run eval/run.py --dataset random --FOLDER $F --dim $TD --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline; done; done
-# - GROUP: [V12_dim50]
-#   PROBLEM_DIM: [50]
-#   MAX_LOAD: [40]
-#   TEST_DIMENSION: [50]
-#   CL: [true]
-#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q1
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
-#   STEEP_SIG: [0.010]          # <-- FIX from Q1
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
-#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-#   PPO_EPOCHS: [5]            # <-- FIX from V9
-#   SEED: [0, 1, 2]
+- GROUP: [V12_dim50]
+  CL: [false]
+  DATA: [random]
+  NAZARI: [true]
+  PROBLEM_DIM: [50]           # <-- the V12 variable
+  MAX_LOAD: [40]
+  TEST_DIMENSION: [50]
+  PPO_EPOCHS: [5]             # <-- FIX from V9
+  TEST_OUTER_STEPS: [5000]
+  SEED: [0, 1, 2]
 
-# - GROUP: [V12_dim100]
-#   PROBLEM_DIM: [100]
-#   MAX_LOAD: [50]
-#   TEST_DIMENSION: [100]
-#   CL: [true]
-#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q1
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
-#   STEEP_SIG: [0.010]          # <-- FIX from Q1
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
-#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-#   PPO_EPOCHS: [5]            # <-- FIX from V9
-#   SEED: [0, 1, 2]
+# (no V12_dim100 group: the N=100 row of the dim table IS V11_train_random --
+#  same config, same 3 seeds. Do not re-train it.)
 
-# - GROUP: [V12_dim500]
-#   PROBLEM_DIM: [500]
-#   MAX_LOAD: [50]
-#   TEST_DIMENSION: [500]
-#   CL: [true]
-#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q1
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
-#   STEEP_SIG: [0.010]          # <-- FIX from Q1
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
-#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-#   PPO_EPOCHS: [5]            # <-- FIX from V9
-#   SEED: [0, 1, 2]
+- GROUP: [V12_dim500]
+  CL: [false]
+  DATA: [random]
+  NAZARI: [true]
+  PROBLEM_DIM: [500]          # <-- the V12 variable
+  MAX_LOAD: [50]
+  TEST_DIMENSION: [500]       # gen_nazari_500.pt exists; checked
+  PPO_EPOCHS: [5]             # <-- FIX from V9
+  TEST_OUTER_STEPS: [5000]
+  SEED: [0, 1, 2]
 
 
 # ============================================================================
