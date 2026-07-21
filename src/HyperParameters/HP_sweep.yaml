@@ -808,49 +808,59 @@
 #   SEED: [0,1,2,3]
 
 
-# ---- [CURRICULUM] run the Q0-Q6 batches above (redesigned protocol). Bake the
-#      Q5 winner (mechanism + its knobs) into HP.yaml for V10-V12. -------------
+# ---- [CURRICULUM] the Q0-Q5 batches above are DONE. WINNER = Q1 (mechanism A,
+#      warmup ramp: CL_MODE=warmup, CL_TYPE=sig, xi=250, E=2000, kappa=0.01).
+#      Q5's 5-seed confirmation reversed the pre-registered Q2 pick: Q1 beats Q2
+#      on the mean (16.1649 vs 16.2038) and 4/5 seeds head-to-head. Q2 (stochastic
+#      depth) tied within a strict CI but lost; Q3 (chain) rejected outright. The
+#      Q1 config is now baked into HP.yaml and into the V10-V12 FIX slots below.
+#      (One caveat: the Q5 OOD evals were never run, so if V11/V12 disappoint,
+#      re-test Q2 there -- its depth coverage was hypothesised to pay off OOD.) --
 
 
 # --- V9: impact of PPO inner epochs (CL false) ------------------------------
 #   With the whole architecture/feature/reward/SA config now fixed in HP.yaml,
 #   sweep the PPO training budget. CL stays false to isolate it.
 #   -> use the winner as PPO_EPOCHS in V10-V12.
-#   NOTE: with curriculum ON, P8 already showed PPO=15 beats PPO=3, so the best
-#   PPO *with* curriculum may exceed this CL-off optimum; V10 is where they meet.
+#   RESULT: WINNER = PPO_EPOCHS=5. Mean falls monotonically 1->3->5->10, but the
+#   5->10 gain (-0.022) is below the noise floor (0.051) and seed-split, while
+#   PPO=15 DIVERGES on 2/4 seeds (final cost ~20 vs ~16.3). 5 ties the best mean
+#   at a third of PPO=10's spread and two grid steps from the cliff. The old
+#   "P8 showed PPO=15 beats PPO=3 with curriculum" claim is contradicted here at
+#   CL=false; if it must be re-checked with curriculum on, do it as a Q6, but the
+#   divergence at 15 makes it a poor default regardless. See res/V9_res/report.pdf.
 #   EVAL: uv run eval/run.py --dataset random --FOLDER V9_ppo_epochs --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
 
 
-- GROUP: [V9_ppo_epochs]
-  PPO_EPOCHS: [15]
-  OUTER_STEPS: [100]
-  CL: [false]
-  SEED: [3]
+# - GROUP: [V9_ppo_epochs]
+#   PPO_EPOCHS: [1,3,5,10,15]
+#   CL: [false]
+#   SEED: [0,1,2]
 
 
 # --- V10: FINAL deployed model = best config + best curriculum + best PPO ----
 #   All component winners are in HP.yaml. Here we (a) turn the BEST curriculum
-#   back on (Q5 winner: mechanism + knobs) and (b) set PPO_EPOCHS to the V9
-#   winner (or Q6 if it beat PPO=3 with curriculum), then train 5 seeds.
+#   back on (Q1 warmup ramp: mechanism A + its knobs) and (b) set PPO_EPOCHS to
+#   the V9 winner (=5), then train 5 seeds.
 #   Deploy the best checkpoint for SOTA / scaling / the headline number (this is
 #   the model that should replace the old xi_CL=500 champion once re-run).
 #   EVAL — headline (10k):     uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16
 #   EVAL — x8 augment:         uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS 10000 --augment 8 --dtype float16   (repeat --dim 50)
 #   EVAL — scaling over dims:  for D in 10 20 50 100; do uv run eval/run.py --dataset random --FOLDER V10_final --dim $D --DATA nazari --OUTER_STEPS 10000 --dtype float16; done
 #   EVAL — scaling over steps: for S in 100 1000 5000 10000 100000 200000 500000 1000000; do uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS $S --dtype float16; done
-# - GROUP: [V10_final]
-#   CL: [true]
-#   CL_MODE: [chain]            # <-- FIX from Q5 winner (mechanism)
-#   CL_TYPE: [sig]              # <-- FIX from Q5 (warmup mode only)
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5 (warmup mode only)
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5 (warmup mode only)
-#   STEEP_SIG: [0.010]          # <-- FIX from Q5 (warmup-sig only)
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5 (true if Q2 won)
-#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5 (chain mode only)
-#   EARLY_STOP_AFTER: [1000]
-#   TEST_OUTER_STEPS: [10000]
-#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6 (Q6 tests 15 with curriculum)
-#   SEED: [0, 1, 2, 3, 4]
+- GROUP: [V10_final]
+  CL: [true]
+  CL_MODE: [warmup]           # <-- FIX from Q1 (mechanism A won: warmup ramp)
+  CL_TYPE: [sig]              # <-- FIX from Q1 (sigmoid ramp)
+  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1 (warmup depth xi*)
+  MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000, Q1 used 2000)
+  STEEP_SIG: [0.010]          # <-- FIX from Q1 (sigmoid steepness kappa)
+  CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1 (constant depth; true was Q2, which lost)
+  CHAIN_REFRESH: [0.1]        # ignored in warmup mode (chain=Q3 rejected)
+  EARLY_STOP_AFTER: [1000]
+  TEST_OUTER_STEPS: [10000]
+  PPO_EPOCHS: [5]            # <-- FIX from V9 (5 beats/ties all; 15 diverges)
+  SEED: [0, 1, 2, 3, 4]
 
 
 # --- V11: cross-distribution generalization (Table data_generalization) ------
@@ -861,28 +871,28 @@
 # - GROUP: [V11_dist]
 #   DATA: [random]
 #   CL: [true]
-#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q5
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
-#   STEEP_SIG: [0.010]          # <-- FIX from Q5
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
-#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
-#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
+#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q1
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
+#   STEEP_SIG: [0.010]          # <-- FIX from Q1
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   PPO_EPOCHS: [5]            # <-- FIX from V9
 #   NAZARI: [true]
 #   SEED: [0, 1, 2]
 
 # - GROUP: [V11_dist]
 #   DATA: [uchoa]
 #   CL: [true]
-#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q5
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
-#   STEEP_SIG: [0.010]          # <-- FIX from Q5
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
-#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
-#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
+#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q1
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
+#   STEEP_SIG: [0.010]          # <-- FIX from Q1
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   PPO_EPOCHS: [5]            # <-- FIX from V9
 #   NAZARI: [false]
 #   SEED: [0, 1, 2]
 
@@ -899,14 +909,14 @@
 #   MAX_LOAD: [40]
 #   TEST_DIMENSION: [50]
 #   CL: [true]
-#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q5
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
-#   STEEP_SIG: [0.010]          # <-- FIX from Q5
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
-#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
-#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
+#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q1
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
+#   STEEP_SIG: [0.010]          # <-- FIX from Q1
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   PPO_EPOCHS: [5]            # <-- FIX from V9
 #   SEED: [0, 1, 2]
 
 # - GROUP: [V12_dim100]
@@ -914,14 +924,14 @@
 #   MAX_LOAD: [50]
 #   TEST_DIMENSION: [100]
 #   CL: [true]
-#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q5
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
-#   STEEP_SIG: [0.010]          # <-- FIX from Q5
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
-#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
-#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
+#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q1
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
+#   STEEP_SIG: [0.010]          # <-- FIX from Q1
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   PPO_EPOCHS: [5]            # <-- FIX from V9
 #   SEED: [0, 1, 2]
 
 # - GROUP: [V12_dim500]
@@ -929,14 +939,14 @@
 #   MAX_LOAD: [50]
 #   TEST_DIMENSION: [500]
 #   CL: [true]
-#   CL_MODE: [chain]            # <-- FIX from Q5 winner (same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q5
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q5
-#   MAX_PROB_STEP: [1000]       # <-- FIX from Q5
-#   STEEP_SIG: [0.010]          # <-- FIX from Q5
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q5
-#   CHAIN_REFRESH: [0.1]        # <-- FIX from Q5
-#   PPO_EPOCHS: [3]            # <-- FIX from V9 / Q6
+#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
+#   CL_TYPE: [sig]              # <-- FIX from Q1
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
+#   STEEP_SIG: [0.010]          # <-- FIX from Q1
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+#   PPO_EPOCHS: [5]            # <-- FIX from V9
 #   SEED: [0, 1, 2]
 
 

@@ -278,15 +278,17 @@ def make_plot(
     if show_current:
         for method in order:
             g = df[df["method"] == method]
-            ax.plot(
-                g["step"], g["mean_current"], color=COLOUR[method], lw=0.6, alpha=0.3, zorder=1
-            )
+            ax.plot(g["step"], g["mean_current"], color=COLOUR[method], lw=0.6, alpha=0.3, zorder=1)
 
     for z, method in enumerate(order):
         g = df[df["method"] == method]
         ax.plot(
-            g["step"], g["mean_best"], color=COLOUR[method], lw=1.4,
-            label=LABEL[method], zorder=3 + z,
+            g["step"],
+            g["mean_best"],
+            color=COLOUR[method],
+            lw=1.4,
+            label=LABEL[method],
+            zorder=3 + z,
         )
 
     if logx:
@@ -295,7 +297,7 @@ def make_plot(
     # Equal-wall-clock marker: where the baseline has spent as much time as the
     # full model run. Recessive — it annotates the curves, it is not a series.
     if vline is not None:
-        ax.axvline(vline, color="0.55", lw=0.7, ls=(0, (3, 2)), zorder=2)
+        ax.axvline(vline, color="0.2", lw=1.1, ls=(0, (4, 2)), zorder=10, alpha=0.95)
         ax.annotate(
             "equal time",
             xy=(vline, 1.0),

@@ -74,7 +74,7 @@ METROPOLIS: True # Use Metropolis criterion
 
 # =============== PPO Algorithm ===============
 METHOD: "ppo" # Training algorithm used
-PPO_EPOCHS: 15 # Number of PPO optimization steps
+PPO_EPOCHS: 5 # Number of PPO optimization steps (V9 winner: ties PPO=10 within the noise floor but far more stable; PPO=15 diverges 2/4 seeds)
 TRACE_DECAY: 0.99 # Lambda parameter for GAE
 EPS_CLIP: 0.25 # Policy clipping range
 LOSS: "min_cost" # Optimization objective
@@ -85,16 +85,21 @@ BETA_KL: 1.0 # KL penalty coefficient
 GP_LAMBDA: 0.01 # Gradient penalty weight
 
 # =============== Curriculum ===============
+# Q-batch winner = Q1 warmup ramp (mechanism A). At 5 seeds it beats the
+# stochastic-depth challenger Q2 on the mean (16.1649 vs 16.2038, 4/5 seeds) and
+# clears the Q0 floor by ~2.4x. Q2 (stochastic depth) and Q3 (chains) were
+# rejected: Q3 uniformly worse than Q0; Q2 tied but lost the 5-seed confirmation.
+# Config below is the exact Q1 arm: sig ramp, xi=250, E=2000, kappa=0.01.
 CL : True # Enable curriculum learning
-MAX_PROB_STEP: 1000 # Step to calcul the curriculum step 
-MAX_OUTER_STEPS_CL: 500 # Max outer steps for curriculum learning (pre steps)
-STEEP_SIG: 0.01 # Steepness of the sigmoid function for curriculum learning
-CL_TYPE: "sig" # Curriculum learning schedule type: sig or lin
-CL_RANDOM_DEPTH: False # If True, warm each instance to its own depth d_i ~ U{0..t_init} instead of all to t_init
-CL_MODE: "warmup" # Curriculum mechanism: "warmup" = pre-improvement phase before collection (original); "chain" = persistent chains (instances + best solutions persist across epochs, no warmup)
-CHAIN_REFRESH: 0.1 # chain mode: fraction of chains replaced by fresh instances each epoch (mean chain age = 1/rho epochs)
+MAX_PROB_STEP: 2000 # Ramp length E: epoch by which the sigmoid curriculum schedule saturates (Q1)
+MAX_OUTER_STEPS_CL: 250 # Warmup depth xi: SA pre-improvement steps per instance (Q1 winner; 500 was harmful in Q2/Q4)
+STEEP_SIG: 0.01 # Sigmoid steepness kappa for the warmup ramp (Q1)
+CL_TYPE: "sig" # Curriculum learning schedule type: sig or lin (Q1 = sig ramp)
+CL_RANDOM_DEPTH: False # If True, warm each instance to its own depth d_i ~ U{0..t_init} (Q2 mechanism; lost at 5 seeds)
+CL_MODE: "warmup" # Curriculum mechanism: "warmup" = pre-improvement phase before collection (Q1, chosen); "chain" = persistent chains (Q3, rejected)
+CHAIN_REFRESH: 0.1 # chain mode: fraction of chains replaced by fresh instances each epoch (ignored in warmup mode)
 CHAIN_MAX_AGE: 0 # chain mode: force-refresh chains older than this many epochs (0 = disabled)
-EARLY_STOP_AFTER: 0 # Epoch after which early stopping may trigger under CL; 0 -> follow MAX_PROB_STEP
+EARLY_STOP_AFTER: 1000 # Epoch after which early stopping may trigger under CL (matches the validated Q1 arm; 0 -> follow MAX_PROB_STEP)
 
 # =============== Testing during training ===============
 TEST_DIMENSION: 100 # Test dimension (50 or 100)
