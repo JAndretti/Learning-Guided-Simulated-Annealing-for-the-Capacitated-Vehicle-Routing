@@ -848,19 +848,19 @@
 #   EVAL — x8 augment:         uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS 10000 --augment 8 --dtype float16   (repeat --dim 50)
 #   EVAL — scaling over dims:  for D in 10 20 50 100; do uv run eval/run.py --dataset random --FOLDER V10_final --dim $D --DATA nazari --OUTER_STEPS 10000 --dtype float16; done
 #   EVAL — scaling over steps: for S in 100 1000 5000 10000 100000 200000 500000 1000000; do uv run eval/run.py --dataset random --FOLDER V10_final --dim 100 --DATA nazari --OUTER_STEPS $S --dtype float16; done
-- GROUP: [V10_final]
-  CL: [true]
-  CL_MODE: [warmup]           # <-- FIX from Q1 (mechanism A won: warmup ramp)
-  CL_TYPE: [sig]              # <-- FIX from Q1 (sigmoid ramp)
-  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1 (warmup depth xi*)
-  MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000, Q1 used 2000)
-  STEEP_SIG: [0.010]          # <-- FIX from Q1 (sigmoid steepness kappa)
-  CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1 (constant depth; true was Q2, which lost)
-  CHAIN_REFRESH: [0.1]        # ignored in warmup mode (chain=Q3 rejected)
-  EARLY_STOP_AFTER: [1000]
-  TEST_OUTER_STEPS: [5000]
-  PPO_EPOCHS: [5]            # <-- FIX from V9 (5 beats/ties all; 15 diverges)
-  SEED: [0, 1, 2, 3, 4]
+# - GROUP: [V10_final]
+#   CL: [true]
+#   CL_MODE: [warmup]           # <-- FIX from Q1 (mechanism A won: warmup ramp)
+#   CL_TYPE: [sig]              # <-- FIX from Q1 (sigmoid ramp)
+#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1 (warmup depth xi*)
+#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000, Q1 used 2000)
+#   STEEP_SIG: [0.010]          # <-- FIX from Q1 (sigmoid steepness kappa)
+#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1 (constant depth; true was Q2, which lost)
+#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode (chain=Q3 rejected)
+#   EARLY_STOP_AFTER: [1000]
+#   TEST_OUTER_STEPS: [5000]
+#   PPO_EPOCHS: [5]            # <-- FIX from V9 (5 beats/ties all; 15 diverges)
+#   SEED: [0, 1, 2, 3, 4]
 
 
 # --- V11: cross-distribution generalization (Table data_generalization) ------
@@ -868,33 +868,33 @@
 #   Nazari (here) and Uchoa. Expect random-trained to win on BOTH.
 #   EVAL on Nazari: uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA nazari --OUTER_STEPS 10000 --dtype float16 --no-baseline
 #   EVAL on Uchoa:  uv run eval/run.py --dataset random --FOLDER V11_dist --dim 100 --DATA uchoa  --OUTER_STEPS 10000 --dtype float16 --no-baseline
-# - GROUP: [V11_dist]
-#   DATA: [random]
-#   CL: [true]
-#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q1
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
-#   STEEP_SIG: [0.010]          # <-- FIX from Q1
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
-#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-#   PPO_EPOCHS: [5]            # <-- FIX from V9
-#   NAZARI: [true]
-#   SEED: [0, 1, 2]
+- GROUP: [V11_dist]
+  DATA: [random]
+  CL: [true]
+  CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
+  CL_TYPE: [sig]              # <-- FIX from Q1
+  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
+  MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
+  STEEP_SIG: [0.010]          # <-- FIX from Q1
+  CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
+  CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+  PPO_EPOCHS: [5]            # <-- FIX from V9
+  NAZARI: [true]
+  SEED: [0, 1, 2]
 
-# - GROUP: [V11_dist]
-#   DATA: [uchoa]
-#   CL: [true]
-#   CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
-#   CL_TYPE: [sig]              # <-- FIX from Q1
-#   MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
-#   MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
-#   STEEP_SIG: [0.010]          # <-- FIX from Q1
-#   CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
-#   CHAIN_REFRESH: [0.1]        # ignored in warmup mode
-#   PPO_EPOCHS: [5]            # <-- FIX from V9
-#   NAZARI: [false]
-#   SEED: [0, 1, 2]
+- GROUP: [V11_dist]
+  DATA: [uchoa]
+  CL: [true]
+  CL_MODE: [warmup]           # <-- FIX from Q1 (warmup ramp; same block as V10)
+  CL_TYPE: [sig]              # <-- FIX from Q1
+  MAX_OUTER_STEPS_CL: [250]   # <-- FIX from Q1
+  MAX_PROB_STEP: [2000]       # <-- FIX from Q1 (ramp length E; was 1000)
+  STEEP_SIG: [0.010]          # <-- FIX from Q1
+  CL_RANDOM_DEPTH: [false]    # <-- FIX from Q1
+  CHAIN_REFRESH: [0.1]        # ignored in warmup mode
+  PPO_EPOCHS: [5]            # <-- FIX from V9
+  NAZARI: [false]
+  SEED: [0, 1, 2]
 
 
 # --- V12: cross-dimension generalization ------------------------------------

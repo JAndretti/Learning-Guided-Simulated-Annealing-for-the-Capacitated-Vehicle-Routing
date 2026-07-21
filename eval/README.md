@@ -81,3 +81,36 @@ That's it — no other files need to change.
 | Set X, XL | `cvrplib_rounded_cost` | Euclidean distance **rounded to nearest integer** per edge |
 | Queiroga XML | `exact_euclidean_cost` | Exact float Euclidean distance |
 | Set X batch (padded) | `extract_and_cost` | Ghost-node cleanup → `cvrplib_rounded_cost` |
+
+## Scaling & timing benchmarks (`bench_*.py`)
+
+Standalone from the `run.py` handler system — these measure *runtime behaviour*
+rather than benchmark quality, and each writes its own resumable CSV under
+`res/<FOLDER>/bench/`.
+
+| Script | Produces |
+|---|---|
+| `bench_scaling.py` | cost + time over a (dimension × step-budget) grid |
+| `bench_dims_cpu.py` | sequential per-instance time vs. `N`, up to `N=10,000` |
+| `bench_batch.py` | GPU total/per-instance time vs. batch size |
+| `bench_precision.py` | float32 vs. float16 vs. bfloat16 cost and speedup |
+| `bench_plots.py` | all figures (pdf+png) and `tables.tex` from those CSVs |
+
+Figures are camera-ready: no titles (captions live in the .tex), Times-like serif
+at AAAI column width (3.3in, `--width` to change), vector PDF with Type-42 fonts,
+CVD-safe palette with direct labels and per-series markers so nothing depends on
+colour alone.
+
+Driver:
+
+```bash
+./scripts/run_bench.sh BEST smoke     # tiny end-to-end check (~2 min)
+./scripts/run_bench.sh BEST full      # everything (hours — the long budgets dominate)
+./scripts/run_bench.sh BEST batch     # one sweep + replot
+./scripts/run_bench.sh BEST plots     # replot only, no re-running
+TAG=rtx5070 ./scripts/run_bench.sh BEST full   # suffix outputs per machine
+```
+
+All sweeps take `--resume`, which skips configurations already in the CSV, so an
+interrupted long run continues where it stopped. Only the SA loop is timed
+(`sa_time`); problem setup is recorded separately as `setup_time` and excluded.
