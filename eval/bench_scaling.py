@@ -38,7 +38,7 @@ from bench_common import (
 )
 from tqdm import tqdm
 
-KEYS = ["dim", "steps", "batch_size", "dtype"]
+KEYS = ["dim", "steps", "batch_size", "dtype", "data_source"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,6 +59,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also measure pure SA (no actor) on the same cells",
     )
+    p.add_argument(
+        "--DATA_SOURCE",
+        type=str,
+        default="default",
+        choices=["default", "neuopt"],
+        help="nazari test set: 'default' (gen_nazari_{dim}.pt) or 'neuopt' "
+        "(NeuOpt_data/cvrp_{dim}.pkl)",
+    )
     return p
 
 
@@ -72,7 +80,7 @@ def main() -> None:
 
     for dim in args.dims:
         batch = batch_for(args.batch_size, dim)
-        todo = [s for s in args.steps if (dim, s, batch, args.dtype) not in done]
+        todo = [s for s in args.steps if (dim, s, batch, args.dtype, args.DATA_SOURCE) not in done]
         if not todo:
             print(f"dim={dim}: all cells present, skipping")
             continue
@@ -89,6 +97,7 @@ def main() -> None:
             dtype=dtype,
             init=args.INIT,
             data=args.DATA,
+            source=args.DATA_SOURCE,
         )
         init_cost = torch.mean(problem.cost(init_x)).item()
         print(f"dim={dim}  batch={batch}  init_cost={init_cost:.4f}  setup={setup_time:.1f}s")
@@ -108,6 +117,7 @@ def main() -> None:
                 "device": args.device,
                 "init": args.INIT,
                 "data": args.DATA,
+                "data_source": args.DATA_SOURCE,
             }
             if args.baseline:
                 cost_bl, time_bl = timed_lgsa(

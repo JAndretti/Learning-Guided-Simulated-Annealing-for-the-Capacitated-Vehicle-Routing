@@ -16,27 +16,26 @@ from init import initialize_test_problem
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dim", type=int, default=100, choices=[10, 20, 50, 100, 200, 500, 1000])
+    parser.add_argument("--DATA", type=str, default="nazari", choices=["nazari", "uchoa"])
     parser.add_argument(
-        "--dim", type=int, default=100, choices=[10, 20, 50, 100, 200, 500, 1000]
-    )
-    parser.add_argument(
-        "--DATA", type=str, default="nazari", choices=["nazari", "uchoa"]
-    )
-    parser.add_argument(
-        "--DATA_SOURCE", type=str, default="default", choices=["default", "neuopt"],
+        "--DATA_SOURCE",
+        type=str,
+        default="default",
+        choices=["default", "neuopt"],
         help="nazari test set: 'default' (gen_nazari_{dim}.pt) or 'neuopt' "
-             "(NeuOpt_data/cvrp_{dim}.pkl)",
+        "(NeuOpt_data/cvrp_{dim}.pkl)",
     )
     parser.add_argument("--batch_size", type=int, default=10000)
-    parser.add_argument(
-        "--no-baseline", dest="BASELINE", action="store_false", default=True
-    )
+    parser.add_argument("--no-baseline", dest="BASELINE", action="store_false", default=True)
     parser.add_argument("--greedy", dest="GREEDY", action="store_true", default=False)
+    parser.add_argument("--no-metro", dest="METROPOLIS", action="store_false", default=True)
     parser.add_argument(
-        "--no-metro", dest="METROPOLIS", action="store_false", default=True
-    )
-    parser.add_argument(
-        "--augment", type=int, default=1, choices=range(1, 9), metavar="K",
+        "--augment",
+        type=int,
+        default=1,
+        choices=range(1, 9),
+        metavar="K",
         help="Number of dihedral augmentations to run (1=off, max 8)",
     )
 
@@ -136,9 +135,9 @@ def run(args: argparse.Namespace) -> None:
 
     # Save original problem data once — restored before each model and each augmentation run.
     orig_coords = problem.coords.clone()
-    demands     = problem.demands.clone()
-    capacity    = problem.capacity.clone()
-    B           = orig_coords.shape[0]
+    demands = problem.demands.clone()
+    capacity = problem.capacity.clone()
+    B = orig_coords.shape[0]
 
     for model_name in tqdm(model_names, desc="Models", leave=False):
         HP = init_problem_parameters(model_name, cfg)
@@ -149,7 +148,11 @@ def run(args: argparse.Namespace) -> None:
         input_dim = problem.get_input_dim()
 
         actor = build_actor(
-            HP, model_name, input_dim, device=args.device, seed=args.seed,
+            HP,
+            model_name,
+            input_dim,
+            device=args.device,
+            seed=args.seed,
             dtype=args.torch_dtype,
         )
 
@@ -161,22 +164,25 @@ def run(args: argparse.Namespace) -> None:
         if args.BASELINE:
             t0 = time.time()
             test_bl = run_lgsa(
-                actor, problem, init_x, HP,
-                outer_steps=args.OUTER_STEPS, baseline=True, greedy=False,
+                actor,
+                problem,
+                init_x,
+                HP,
+                outer_steps=args.OUTER_STEPS,
+                baseline=True,
+                greedy=False,
                 dtype=args.torch_dtype,
             )
-            exec_time_bl  = time.time() - t0
-            final_cost_bl = torch.mean(
-                problem.cost(test_bl["best_x"].to(problem.device))
-            ).item()
+            exec_time_bl = time.time() - t0
+            final_cost_bl = torch.mean(problem.cost(test_bl["best_x"].to(problem.device))).item()
             # Restore after baseline so the augmentation loop starts from original coords.
             problem.generate_params(orig_coords, demands, capacity)
         else:
             final_cost_bl = float("nan")
-            exec_time_bl  = float("nan")
+            exec_time_bl = float("nan")
 
         # --- LGSA augmentation loop ---
-        best_cost     = torch.full((B,), float("inf"), device=args.device)
+        best_cost = torch.full((B,), float("inf"), device=args.device)
         best_solution = None
 
         t0 = time.time()
@@ -186,13 +192,18 @@ def run(args: argparse.Namespace) -> None:
             init_x_k = problem.generate_init_state(args.INIT, False)
 
             result_k = run_lgsa(
-                actor, problem, init_x_k, HP,
-                outer_steps=args.OUTER_STEPS, baseline=False, greedy=args.GREEDY,
+                actor,
+                problem,
+                init_x_k,
+                HP,
+                outer_steps=args.OUTER_STEPS,
+                baseline=False,
+                greedy=args.GREEDY,
                 dtype=args.torch_dtype,
             )
 
             # Cost is frame-invariant (isometry) — directly comparable across k.
-            cost_k   = problem.cost(result_k["best_x"].to(args.device))
+            cost_k = problem.cost(result_k["best_x"].to(args.device))
             improved = cost_k < best_cost
             best_cost = torch.where(improved, cost_k, best_cost)
             if best_solution is None:
@@ -200,7 +211,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 best_solution[improved] = result_k["best_x"][improved]
 
-        exec_time  = time.time() - t0
+        exec_time = time.time() - t0
         final_cost = torch.mean(best_cost).item()
 
         if args.device == "cuda":
@@ -229,12 +240,8 @@ def run(args: argparse.Namespace) -> None:
             }
         )
 
-    df = pd.DataFrame(rows, columns=columns).drop_duplicates(
-        subset=["model"], keep="first"
-    )
-    df_all = pd.DataFrame(all_model_rows).drop_duplicates(
-        subset=["model"], keep="first"
-    )
+    df = pd.DataFrame(rows, columns=columns).drop_duplicates(subset=["model"], keep="first")
+    df_all = pd.DataFrame(all_model_rows).drop_duplicates(subset=["model"], keep="first")
 
     base_path = f"res/{args.FOLDER}"
     out = save_results(df, base_path, f"res_model_{args.dim}")

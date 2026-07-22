@@ -2,20 +2,29 @@
 config:
   BATCH_SIZE: 2048
   BETA_KL: 1.0
+  BILINEAR: false
+  CHAIN_MAX_AGE: 0
+  CHAIN_REFRESH: 0.1
   CL: true
+  CL_MODE: warmup
+  CL_RANDOM_DEPTH: false
   CL_TYPE: sig
   COMMENT: ''
-  CRITIC_MODEL: ff
+  COND_DETOUR: false
+  COND_RANK: false
+  CRITIC_MODEL: deepsets
   DATA: random
   DEVICE: cuda
+  EARLY_STOP_AFTER: 1000
   EMBEDDING_DIM: 32
   ENT_COEF: 0.01
   EPS_CLIP: 0.25
   GAMMA: 0.99
+  GLOBAL_CONTEXT: false
   GP_LAMBDA: 0.01
-  GROUP: CL_Time_Scaling
+  GROUP: V10_final
   HEURISTIC: insertion
-  INCR_STEP: 0
+  HYBRID_ALPHA: 0.5
   INIT: random
   INIT_LIST:
   - isolate
@@ -23,13 +32,15 @@ config:
   - sweep
   - nearest_neighbor
   INIT_TEMP: 1
+  LEARNABLE_TEMP: false
   LOG: true
+  LOGIT_CLIP: 10.0
   LOSS: min_cost
-  LR_ACTOR: 0.001
+  LR_ACTOR: 0.0003
   LR_CRITIC: 0.001
   MAX_LOAD: 50
-  MAX_OUTER_STEPS_CL: 500
-  MAX_PROB_STEP: 1000
+  MAX_OUTER_STEPS_CL: 250
+  MAX_PROB_STEP: 2000
   METHOD: ppo
   METROPOLIS: true
   MODEL: seq
@@ -38,40 +49,37 @@ config:
   NAZARI: true
   NORMALIZE_REWARD: false
   NUM_H_LAYERS: 1
-  N_EPOCHS: 1000
+  N_EPOCHS: 10000
   N_PROBLEMS: 1024
-  OUTER_STEPS: 100
-  PPO_EPOCHS: 15
+  OUTER_STEPS: 200
+  PPO_EPOCHS: 5
   PROBLEM_DIM: 100
   PROJECT: LG-SA
   REWARD: immediate
-  REWARD_LAST: false
-  REWARD_LAST_ADD: 0.001
-  REWARD_SCALE: 1
-  REWARD_VALID: false
   SCHEDULER: lam
-  SEED: 42
+  SEED: 3
   STEEP_SIG: 0.01
-  STOP_TEMP: 0.1
+  STOP_TEMP: 0.01
   TARGET_KL: 0.03
   TEST_DIMENSION: 100
   TEST_INIT: random
   TEST_NB_PROBLEMS: 1000
-  TEST_OUTER_STEPS: 10000
+  TEST_OUTER_STEPS: 5000
   TRACE_DECAY: 0.99
   UPDATE_METHOD: valid
   VERBOSE: false
-  WARMUP_EPOCHS: 0
   WEIGHT_DECAY: 0.001
   features:
     centroid: true
+    demand_max: true
     density10%: true
     density33%: true
     density5: true
     detour: true
     meta: true
+    neighbor_rank: true
     node_pct: true
-    route_pct: false
+    route_pct: true
     slack: true
     static: true
     topology: true
