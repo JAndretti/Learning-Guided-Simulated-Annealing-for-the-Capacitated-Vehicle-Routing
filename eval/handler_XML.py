@@ -79,7 +79,9 @@ def run(args: argparse.Namespace) -> None:
 
     problem = build_problem(HP, dim=N - 1, n_problems=B, device=args.device)
     input_dim = problem.get_input_dim()
-    actor = build_actor(HP, model_path, input_dim, device=args.device, seed=args.seed)
+    actor = build_actor(
+        HP, model_path, input_dim, device=args.device, seed=args.seed, dtype=args.torch_dtype
+    )
 
     problem.generate_params(batch_coords, batch_demands, batch_caps)
     init_x = problem.generate_init_state(args.INIT, False)
@@ -88,7 +90,9 @@ def run(args: argparse.Namespace) -> None:
     print(f"Running LGSA on batch of {B} instances (N={N})...")
 
     t0 = time.time()
-    result = run_lgsa(actor, problem, init_x, HP, outer_steps=args.OUTER_STEPS)
+    result = run_lgsa(
+        actor, problem, init_x, HP, outer_steps=args.OUTER_STEPS, dtype=args.torch_dtype
+    )
     total_elapsed = time.time() - t0
     print(f"Done in {total_elapsed:.2f}s ({total_elapsed / B:.4f}s/instance)")
 
