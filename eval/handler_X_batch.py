@@ -27,6 +27,10 @@ def add_args(parser: argparse.ArgumentParser) -> None:
         "--batch_size", type=str, default="all",
         help="Mini-batch size within a bucket. 'all' uses the full bucket at once."
     )
+    parser.add_argument(
+        "--no-baseline", dest="BASELINE", action="store_false", default=True,
+        help="Skip the blind-SA (baseline) pass; run LG-SA only."
+    )
 
 
 def _create_buckets(instances: list[dict], mode: str, n_buckets: int) -> list[list[dict]]:
@@ -104,8 +108,23 @@ def _solve_bucket(
         # internally, but it receives the same tensor so the result is identical.
         problem.init_parameters(init_x)
 
+        # --- Blind SA (baseline) then LG-SA, from the SAME initial solution ---
+        sa_best = None
+        sa_elapsed = float("nan")
+        if args.BASELINE:
+            t0 = time.time()
+            sa_res = run_lgsa(
+                actor, problem, init_x.clone(), HP,
+                outer_steps=args.OUTER_STEPS, baseline=True, dtype=args.torch_dtype,
+            )
+            sa_elapsed = time.time() - t0
+            sa_best = sa_res["best_x"].cpu().numpy()
+
         t0 = time.time()
-        result = run_lgsa(actor, problem, init_x, HP, outer_steps=args.OUTER_STEPS)
+        result = run_lgsa(
+            actor, problem, init_x.clone(), HP,
+            outer_steps=args.OUTER_STEPS, baseline=False, dtype=args.torch_dtype,
+        )
         elapsed = time.time() - t0
 
         best_x = result["best_x"].cpu().numpy()  # [B, seq_len, 1]
@@ -115,13 +134,26 @@ def _solve_bucket(
             cost = extract_and_cost(sol, inst["n_nodes"], inst["raw_coords"], rounded=True)
             opt = inst["optimal_cost"]
             gap = 100 * (cost - opt) / opt if not np.isnan(opt) else float("nan")
+
+            if args.BASELINE:
+                sa_cost = extract_and_cost(
+                    sa_best[i, :, 0].tolist(), inst["n_nodes"], inst["raw_coords"], rounded=True
+                )
+                sa_gap = 100 * (sa_cost - opt) / opt if not np.isnan(opt) else float("nan")
+            else:
+                sa_cost = float("nan")
+                sa_gap = float("nan")
+
             results.append({
                 "Instance": inst["name"],
                 "Nodes": inst["n_nodes"],
                 "Optimal_Cost": opt,
                 "LGSA_Cost": cost,
                 "Gap_Percent": gap,
+                "SA_Cost": sa_cost,
+                "SA_Gap_Percent": sa_gap,
                 "Time_sec": elapsed / B,
+                "SA_Time_sec": sa_elapsed / B if args.BASELINE else float("nan"),
                 "Steps": args.OUTER_STEPS,
                 "Bucket_ID": bucket_id,
                 "Batch_size_actual": B,
@@ -151,7 +183,9 @@ def run(args: argparse.Namespace) -> None:
     # Build actor once — input_dim depends only on feature flags
     _probe = build_problem(HP, dim=100, n_problems=1, device=args.device)
     input_dim = _probe.get_input_dim()
-    actor = build_actor(HP, model_path, input_dim, device=args.device, seed=args.seed)
+    actor = build_actor(
+        HP, model_path, input_dim, device=args.device, seed=args.seed, dtype=args.torch_dtype
+    )
 
     instance_files = sorted(glob2.glob(os.path.join(args.DATA_PATH, "*.vrp")))
     if not instance_files:

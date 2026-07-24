@@ -13,6 +13,7 @@ HANDLERS: dict[str, str] = {
     "X": "handler_X",
     "X_batch": "handler_X_batch",
     "XL": "handler_XL",
+    "XL_batch": "handler_XL_batch",
     "XML": "handler_XML",
 }
 
@@ -33,7 +34,14 @@ parser.add_argument(
     "--INIT",
     type=str,
     default="random",
-    choices=["random", "isolate", "sweep", "nearest_neighbor", "Clark_and_Wright"],
+    choices=[
+        "random",
+        "isolate",
+        "sweep",
+        "nearest_neighbor",
+        "Clark_and_Wright",
+        "Clark_and_Wright_reversal",
+    ],
 )
 parser.add_argument("--OUTER_STEPS", type=int, default=10000)
 parser.add_argument("--seed", type=int, default=1234)

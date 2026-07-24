@@ -5,6 +5,7 @@
 from abc import ABC, abstractmethod
 
 import torch
+from functools import partial
 import torch.nn.functional as F
 
 # Local Imports
@@ -39,6 +40,7 @@ INIT_METHODS = {
     "sweep": generate_sweep_solution,
     "isolate": generate_isolate_solution,
     "Clark_and_Wright": generate_Clark_and_Wright,
+    "Clark_and_Wright_reversal": partial(generate_Clark_and_Wright, allow_reversal=True),
     "nearest_neighbor": generate_nearest_neighbor,
     "cheapest_insertion": cheapest_insertion,
     "path_cheapest_arc": path_cheapest_arc,
