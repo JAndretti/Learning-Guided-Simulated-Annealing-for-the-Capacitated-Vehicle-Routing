@@ -182,6 +182,11 @@ class CVRP(Problem):
             is_ghost[:, 0] = False  # keep real depot
             masked_matrix = self.matrix.masked_fill(is_ghost.unsqueeze(1), float("inf"))
 
+            # NOTE: mu_5 uses a FIXED k=5 while the other two scale with the node
+            # count, and the count is the batch minimum rather than each instance's
+            # own. Both are known inconsistencies, documented as a limitation in the
+            # paper; changing them shifts every N != 100 evaluation and needs a
+            # retrain to be validated (see the density-scale note in the appendix).
             self.mean_dist_5 = calculate_knn_isolation(masked_matrix, k=5)
             self.mean_dist_10 = calculate_knn_isolation(masked_matrix, k=max(1, min_real // 10))
             self.mean_dist_33 = calculate_knn_isolation(masked_matrix, k=max(1, min_real // 3))
@@ -249,7 +254,12 @@ class CVRP(Problem):
         return sum(dims[k] for k, v in self.feature_flags.items() if v)
 
     def get_distance_to_centroid(self, solution: torch.Tensor) -> torch.Tensor:
-        """Computes distance of each node to its route's center of gravity."""
+        """Computes distance of each node to its route's center of gravity.
+
+        NOTE: the center of gravity includes the route's opening depot (each depot
+        position belongs to the segment it opens in segment_ids), so it is slightly
+        biased toward the depot.
+        """
         coords = self.get_coords(solution)
 
         # Setup aggregation tensors. seq_len + 1 is a static upper bound on the number
@@ -504,11 +514,6 @@ class CVRP(Problem):
     def update_tensor(self, solution: torch.Tensor) -> None:
         """Updates internal bookkeeping tensors when the solution changes."""
         self.ordered_demands = self.get_demands(solution)
-        # self.mask = self.ordered_demands != 0
-        # segment_start = self.mask & ~torch.cat(
-        #     [torch.zeros_like(self.mask[:, :1]), self.mask[:, :-1]], dim=1
-        # )
-        # self.segment_ids = torch.cumsum(segment_start, 1) * self.mask
         self.mask = self.ordered_demands == 0
         self.segment_ids = self.mask.long().cumsum(dim=1)
 
