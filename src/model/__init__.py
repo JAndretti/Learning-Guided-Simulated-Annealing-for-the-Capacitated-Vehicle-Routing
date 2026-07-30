@@ -2,6 +2,7 @@
 from .base import SAModel, build_mlp
 from .actors import CVRPActor, CVRPActorShared
 from .critics import CVRPCritic, CVRPCriticDeepSets
+from .score_actors import ScoreActor, SCORE_MODES
 
 __all__ = [
     "SAModel",
@@ -10,4 +11,6 @@ __all__ = [
     "CVRPActorShared",
     "CVRPCritic",
     "CVRPCriticDeepSets",
+    "ScoreActor",
+    "SCORE_MODES",
 ]

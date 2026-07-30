@@ -174,6 +174,7 @@ def initialize_test_problem(
     data: str = "nazari",
     device: str = "cpu",
     source: str = "default",
+    offset: int = 0,
 ) -> tuple[CVRP, torch.Tensor]:
     """
     Initialize test problem instance with pre-generated data.
@@ -187,10 +188,20 @@ def initialize_test_problem(
         device: Compute device string
         source: For `data="nazari"`, which test set to read — "default" (our own
             `gen_nazari_{dim}.pt`) or "neuopt" (`NeuOpt_data/cvrp_{dim}.pkl`)
+        offset: Index of the first instance to keep, so disjoint slices of one
+            file can be used as separate sets (e.g. a reported set at offset 0
+            and a tuning set at offset 1000). Only honoured for
+            `data="nazari", source="default"`; a non-zero offset with any other
+            combination raises, rather than being silently ignored.
 
     Returns:
         Tuple of (test_problem_instance, initial_test_solutions)
     """
+    if offset != 0 and not (data == "nazari" and source == "default"):
+        raise ValueError(
+            f"offset={offset} is only supported for data='nazari', source='default' "
+            f"(got data={data!r}, source={source!r})"
+        )
 
     if data == "nazari":
         if source == "neuopt":
@@ -208,9 +219,15 @@ def initialize_test_problem(
             except FileNotFoundError:
                 print(f"Nazari test data file not found: {path}")
                 raise
-            coordinates = test_data["node_coords"][:n_test_problems].to(device)
-            demands = test_data["demands"][:n_test_problems].to(device)
-            capacities = test_data["capacity"][:n_test_problems].to(device)
+            lo, hi = offset, offset + n_test_problems
+            available = test_data["node_coords"].shape[0]
+            if hi > available:
+                raise ValueError(
+                    f"Requested instances [{lo}:{hi}] but {path} holds only {available}"
+                )
+            coordinates = test_data["node_coords"][lo:hi].to(device)
+            demands = test_data["demands"][lo:hi].to(device)
+            capacities = test_data["capacity"][lo:hi].to(device)
         else:
             raise ValueError(f"Unknown nazari data source: {source}")
 

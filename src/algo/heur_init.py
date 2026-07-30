@@ -863,13 +863,39 @@ def generate_Clark_and_Wright(cvrp_instance, allow_reversal: bool = False):
     capacity = cvrp_instance.capacity.squeeze(-1).cpu()
 
     # Determine number of processes (use all available CPU cores).
-    # Forking a process that has already initialized a CUDA context deadlocks
-    # (the workers hang holding the parent's GPU memory), which happens during
-    # evaluation because the test data is moved to the GPU before this init
-    # runs. Since the per-instance worker is fast, fall back to sequential
-    # processing whenever a CUDA context is live.
-    cuda_active = torch.cuda.is_available() and torch.cuda.is_initialized()
-    num_processes = 1 if cuda_active else min(batch_size, os.cpu_count())
+    #
+    # Worker processes are started with the "spawn" method, never "fork".
+    # Forking a process that already holds a CUDA context deadlocks (the workers
+    # hang onto the parent's GPU memory), and a CUDA context is live during
+    # evaluation because the instances are moved to the GPU before this init
+    # runs. Spawn starts a clean interpreter, so it is safe with or without CUDA
+    # and the pool no longer has to be given up on GPU machines -- on a 12-core
+    # host this is the difference between ~1s and ~minutes for 1000 instances,
+    # and that time is charged to the caller's setup budget.
+    #
+    # Spawn re-imports __main__ in each worker, so every entry point that can
+    # reach this function needs an `if __name__ == "__main__":` guard
+    # (src/main.py, launch_HP_sweep.py and eval/run.py all have one). Without
+    # the guard the workers re-run the whole program.
+    #
+    # When the pool is worth paying for: measured on a 12-core host, the worker
+    # costs ~0.9 ms per instance at dim=100 while spawning the pool costs ~1.7 s
+    # fixed, so multiprocessing LOSES by ~10x on a 1000-instance dim-100 batch
+    # and only pays once the sequential work runs into tens of seconds. Work per
+    # instance grows with the savings matrix, roughly dim^2, so the trigger is
+    # batch_size * (dim/100)^2 rather than batch_size alone -- that keeps the
+    # pool for the large-N benchmarks (Set X, Set XL) and skips it for the
+    # dim-100 evaluation batches, where it was pure overhead.
+    #
+    # Overrides: LGSA_CW_SEQUENTIAL=1 forces sequential, LGSA_CW_PARALLEL=1
+    # forces the pool.
+    work_units = batch_size * (dim / 100.0) ** 2
+    use_pool = work_units > 6600  # ~6 s of sequential work, several x the spawn cost
+    if os.environ.get("LGSA_CW_SEQUENTIAL") == "1":
+        use_pool = False
+    elif os.environ.get("LGSA_CW_PARALLEL") == "1":
+        use_pool = True
+    num_processes = min(batch_size, os.cpu_count()) if use_pool else 1
 
     # Prepare arguments for parallel processing
     args_list = []
@@ -878,7 +904,8 @@ def generate_Clark_and_Wright(cvrp_instance, allow_reversal: bool = False):
 
     # Process in parallel
     if num_processes > 1 and batch_size > 1:
-        with mp.Pool(processes=num_processes) as pool:
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=num_processes) as pool:
             results = list(
                 tqdm(
                     pool.imap(_clark_wright_worker, args_list),
